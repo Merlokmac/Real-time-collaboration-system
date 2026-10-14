@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectRole {
+  OWNER
+  MEMBER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  avatarUrl    String?  @map("avatar_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  memberships         ProjectMember[]
+  invitationsReceived Invitation[]    @relation("InvitationInvitee")
+  invitationsSent     Invitation[]    @relation("InvitationInviter")
+  createdProjects     Project[]
+  assignedTasks       Task[]          @relation("TaskAssignee")
+  createdTasks        Task[]          @relation("TaskCreator")
+  comments            Comment[]
+  messages            Message[]
+  activityLogs        ActivityLog[]
+
+  @@map("users")
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String   @default("")
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy    User            @relation(fields: [createdById], references: [id])
+  members      ProjectMember[]
+  invitations  Invitation[]
+  columns      Column[]
+  tasks        Task[]
+  labels       Label[]
+  messages     Message[]
+  activityLogs ActivityLog[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  projectId String      @map("project_id")
+  userId    String      @map("user_id")
+  role      ProjectRole @default(MEMBER)
+  joinedAt  DateTime    @default(now()) @map("joined_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model Invitation {
+  id          String           @id @default(uuid())
+  projectId   String           @map("project_id")
+  inviteeId   String           @map("invitee_id")
+  inviterId   String           @map("inviter_id")
+  status      InvitationStatus @default(PENDING)
+  expiresAt   DateTime         @map("expires_at")
+  respondedAt DateTime?        @map("responded_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invitee User    @relation("InvitationInvitee", fields: [inviteeId], references: [id], onDelete: Cascade)
+  inviter User    @relation("InvitationInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([inviteeId, status])
+  @@index([projectId, status])
+  @@map("invitations")
+}
+
+model Column {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  name      String
+  position  Int
+  isDone    Boolean  @default(false) @map("is_done")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId, position])
+  @@map("columns")
+}
+
+model Task {
+  id              String    @id @default(uuid())
+  projectId       String    @map("project_id")
+  columnId        String    @map("column_id")
+  title           String
+  // Bản text xuất từ Y.Doc, chỉ dùng để tìm kiếm/hiển thị, không phải nguồn hợp nhất
+  descriptionText String    @default("") @map("description_text")
+  position        Int
+  assigneeId      String?   @map("assignee_id")
+  dueDate         DateTime? @map("due_date")
+  createdById     String    @map("created_by_id")
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column    Column           @relation(fields: [columnId], references: [id], onDelete: Restrict)
+  assignee  User?            @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy User             @relation("TaskCreator", fields: [createdById], references: [id])
+  labels    TaskLabel[]
+  comments  Comment[]
+  document  TaskDocument?
+  updates   DocumentUpdate[]
+
+  @@index([columnId, position])
+  @@index([projectId])
+  @@index([assigneeId])
+  @@map("tasks")
+}
+
+model Label {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  name      String
+  color     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   TaskLabel[]
+
+  @@unique([projectId, name])
+  @@map("labels")
+}
+
+model TaskLabel {
+  taskId  String @map("task_id")
+  labelId String @map("label_id")
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
+  @@index([labelId])
+  @@map("task_labels")
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  taskId    String    @map("task_id")
+  authorId  String    @map("author_id")
+  content   String
+  // id do client sinh ra, dùng để gửi lại không bị trùng
+  clientId  String?   @map("client_id")
+  editedAt  DateTime? @map("edited_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([authorId, clientId])
+  @@index([taskId, createdAt])
+  @@map("comments")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  authorId  String   @map("author_id")
+  content   String
+  clientId  String?  @map("client_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([authorId, clientId])
+  @@index([projectId, createdAt])
+  @@map("messages")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  projectId  String   @map("project_id")
+  actorId    String   @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  meta       Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor   User    @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("activity_logs")
+}
+
+model TaskDocument {
+  taskId      String   @id @map("task_id")
+  snapshot    Bytes?
+  updateCount Int      @default(0) @map("update_count")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_documents")
+}
+
+model DocumentUpdate {
+  id        BigInt   @id @default(autoincrement())
+  taskId    String   @map("task_id")
+  data      Bytes
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, id])
+  @@map("document_updates")
+}
+
+// Bảng phiên đăng nhập cho connect-pg-simple
+model UserSession {
+  sid    String   @id @db.VarChar
+  sess   Json
+  expire DateTime @db.Timestamp(6)
+
+  @@index([expire], map: "IDX_session_expire")
+  @@map("user_sessions")
+}
