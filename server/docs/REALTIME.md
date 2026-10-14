@@ -1,6 +1,6 @@
 # Hợp đồng giữa backend và phần realtime
 
-Phần này dành cho người làm Socket.IO và Yjs. Backend không tự mở socket; nó chỉ cung cấp các hàm dưới đây.
+Phần này làm Socket.IO và Yjs. Backend không tự mở socket; nó chỉ cung cấp các hàm dưới đây.
 
 ## 1. Xác thực kết nối
 
