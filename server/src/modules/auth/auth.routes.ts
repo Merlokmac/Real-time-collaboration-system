@@ -1,11 +1,23 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
 import { requireAuth, currentUserId } from '../../middlewares/auth';
-import { unauthorized } from '../../lib/errors';
+import { HttpError, unauthorized } from '../../lib/errors';
 import { SESSION_COOKIE } from '../../lib/session';
 import * as authService from './auth.service';
 
 export const authRouter = Router();
+
+// Chỉ đếm các lần thất bại, đăng nhập đúng không bị tính
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (_req, _res, next) =>
+    next(new HttpError(429, 'TOO_MANY_REQUESTS', 'Bạn thử quá nhiều lần, vui lòng đợi 15 phút rồi thử lại')),
+});
 
 const email = z.string().trim().toLowerCase().email('Email không hợp lệ').max(254);
 
@@ -31,14 +43,14 @@ function startSession(req: Request, userId: string) {
   });
 }
 
-authRouter.post('/register', async (req, res) => {
+authRouter.post('/register', authLimiter, async (req, res) => {
   const body = registerBody.parse(req.body);
   const user = await authService.register(body);
   await startSession(req, user.id);
   res.status(201).json({ user });
 });
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', authLimiter, async (req, res) => {
   const body = loginBody.parse(req.body);
   const user = await authService.login(body);
   await startSession(req, user.id);

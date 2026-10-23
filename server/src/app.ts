@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import './types';
 import { env, isProd } from './config/env';
 import { sessionMiddleware } from './lib/session';
@@ -10,7 +11,7 @@ export function createApp() {
   const app = express();
 
   if (isProd) app.set('trust proxy', 1);
-  app.disable('x-powered-by');
+  app.use(helmet());
 
   app.use(
     cors({
