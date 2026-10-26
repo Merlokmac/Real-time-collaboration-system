@@ -75,14 +75,30 @@ export async function invite(ctx: Ctx, projectId: string, email: string) {
 }
 
 export async function cancelInvitation(ctx: Ctx, projectId: string, invitationId: string) {
-  const result = await prisma.invitation.updateMany({
-    where: { id: invitationId, projectId, status: 'PENDING' },
-    data: { status: 'CANCELED', respondedAt: new Date() },
-  });
-  if (result.count === 0) throw notFound('Không tìm thấy lời mời đang chờ');
+  const { inviteeId, log } = await prisma.$transaction(async (tx) => {
+    const result = await tx.invitation.updateMany({
+      where: { id: invitationId, projectId, status: 'PENDING' },
+      data: { status: 'CANCELED', respondedAt: new Date() },
+    });
+    if (result.count === 0) throw notFound('Không tìm thấy lời mời đang chờ');
 
-  const invitation = await prisma.invitation.findUniqueOrThrow({ where: { id: invitationId } });
-  realtime.toUser(invitation.inviteeId, ServerEvents.invitationCanceled, { invitationId, projectId });
+    const invitation = await tx.invitation.findUniqueOrThrow({
+      where: { id: invitationId },
+      include: { invitee: { select: publicUser } },
+    });
+    const log = await logActivity(tx, {
+      projectId,
+      actorId: ctx.userId,
+      action: 'invitation.canceled',
+      entityType: 'invitation',
+      entityId: invitationId,
+      meta: { inviteeName: invitation.invitee.name, inviteeEmail: invitation.invitee.email },
+    });
+    return { inviteeId: invitation.inviteeId, log };
+  });
+
+  realtime.toUser(inviteeId, ServerEvents.invitationCanceled, { invitationId, projectId });
+  publishActivity(log);
 }
 
 export async function respond(ctx: Ctx, invitationId: string, accept: boolean) {
