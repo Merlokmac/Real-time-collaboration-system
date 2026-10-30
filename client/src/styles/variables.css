@@ -34,6 +34,17 @@
   --color-warning: #d97706;
   --color-warning-soft: #fef3c7;
 
+  /* Nền tối phía sau hộp thoại */
+  --color-backdrop: rgb(15 23 42 / 0.5);
+
+  /* Nền ảnh đại diện chữ cái (Avatar chọn 1 trong 6 màu theo id người dùng) */
+  --avatar-1: #2563eb;
+  --avatar-2: #7c3aed;
+  --avatar-3: #db2777;
+  --avatar-4: #ea580c;
+  --avatar-5: #0d9488;
+  --avatar-6: #4f46e5;
+
   /* Khoảng cách (bội số 4px) */
   --space-1: 4px;
   --space-2: 8px;
@@ -69,6 +80,7 @@
 
   /* Kích thước bố cục */
   --header-height: 56px;
+  --content-max-width: 1200px;
   --column-width: 280px;
   --control-height: 40px;
   --focus-ring: 0 0 0 3px rgb(37 99 235 / 0.35);
