@@ -64,7 +64,11 @@ export async function moveColumn(ctx: Ctx, projectId: string, columnId: string, 
     const col = cols.find((c) => c.id === columnId);
     if (!col) throw notFound('Không tìm thấy cột');
 
-    const order = moveInList(cols.map((c) => c.id), columnId, toIndex);
+    const order = moveInList(
+      cols.map((c) => c.id),
+      columnId,
+      toIndex,
+    );
     await writeColumnOrder(tx, order);
     const log = await logActivity(tx, {
       projectId,

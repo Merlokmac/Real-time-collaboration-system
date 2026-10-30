@@ -9,8 +9,7 @@ export class HttpError extends Error {
   }
 }
 
-export const badRequest = (message: string, details?: unknown) =>
-  new HttpError(400, 'BAD_REQUEST', message, details);
+export const badRequest = (message: string, details?: unknown) => new HttpError(400, 'BAD_REQUEST', message, details);
 export const unauthorized = (message = 'Bạn cần đăng nhập') => new HttpError(401, 'UNAUTHORIZED', message);
 export const forbidden = (message = 'Bạn không có quyền thực hiện thao tác này') =>
   new HttpError(403, 'FORBIDDEN', message);
