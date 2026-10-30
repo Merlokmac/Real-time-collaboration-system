@@ -37,27 +37,27 @@ Khi một socket xin vào phòng dự án, phải kiểm tra membership (bảng 
 
 ## 3. Danh sách sự kiện server phát (`src/realtime/events.ts`)
 
-| Sự kiện | Payload |
-| --- | --- |
-| `project:updated` | project |
-| `project:deleted` | `{ projectId }` |
-| `member:joined` | `{ projectId, user, role }` |
-| `member:removed` | `{ projectId, userId, user, unassignedTaskIds }` |
-| `member:role_changed` | `{ projectId, changes: [{ userId, role }] }` |
-| `invitation:received` | invitation (gửi vào phòng user) |
-| `invitation:canceled` | `{ invitationId, projectId }` (gửi vào phòng user) |
-| `column:created` / `column:updated` | column |
-| `column:reordered` | `{ projectId, columnIds }` |
-| `column:deleted` | `{ projectId, columnId, columnIds }` |
-| `task:created` / `task:updated` | task |
-| `task:moved` | `{ task, columns: [{ columnId, taskIds }] }` |
-| `task:deleted` | `{ taskId, columnId, taskIds }` |
-| `label:created` / `label:updated` | label |
-| `label:deleted` | `{ labelId }` |
-| `comment:created` / `comment:updated` | comment (có `taskId`) |
-| `comment:deleted` | `{ taskId, commentId }` |
-| `message:created` | message |
-| `activity:created` | log hoạt động |
+| Sự kiện                               | Payload                                            |
+| ------------------------------------- | -------------------------------------------------- |
+| `project:updated`                     | project                                            |
+| `project:deleted`                     | `{ projectId }`                                    |
+| `member:joined`                       | `{ projectId, user, role }`                        |
+| `member:removed`                      | `{ projectId, userId, user, unassignedTaskIds }`   |
+| `member:role_changed`                 | `{ projectId, changes: [{ userId, role }] }`       |
+| `invitation:received`                 | invitation (gửi vào phòng user)                    |
+| `invitation:canceled`                 | `{ invitationId, projectId }` (gửi vào phòng user) |
+| `column:created` / `column:updated`   | column                                             |
+| `column:reordered`                    | `{ projectId, columnIds }`                         |
+| `column:deleted`                      | `{ projectId, columnId, columnIds }`               |
+| `task:created` / `task:updated`       | task                                               |
+| `task:moved`                          | `{ task, columns: [{ columnId, taskIds }] }`       |
+| `task:deleted`                        | `{ taskId, columnId, taskIds }`                    |
+| `label:created` / `label:updated`     | label                                              |
+| `label:deleted`                       | `{ labelId }`                                      |
+| `comment:created` / `comment:updated` | comment (có `taskId`)                              |
+| `comment:deleted`                     | `{ taskId, commentId }`                            |
+| `message:created`                     | message                                            |
+| `activity:created`                    | log hoạt động                                      |
 
 Các sự kiện chỉ mang tính tạm thời như online, đang chỉnh sửa, con trỏ bảng do phần realtime tự định nghĩa và không đi qua database.
 
