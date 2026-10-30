@@ -1,45 +1,151 @@
-// Tạm thời (Tuần 1): chỉ chào người dùng và có nút đăng xuất. Danh sách dự án làm ở Tuần 2.
-import { useState } from 'react';
+/*
+ * Trang Dự án của tôi.
+ *
+ * Luồng tải danh sách:
+ *   - Ô tìm kiếm cập nhật `query` ngay khi gõ; `useDebounce` chờ 300ms ngừng gõ mới đổi `debouncedQuery`.
+ *   - Mỗi khi `debouncedQuery` (hoặc `reloadKey` khi bấm Thử lại) đổi → gọi GET /projects?q=...
+ *     Request cũ bị hủy bằng AbortController, nên kết quả về muộn của lần gõ trước không ghi đè lần sau.
+ *   - "Đang tải" không lưu thành state riêng mà suy ra: kết quả đang có thuộc về request nào (`result.key`)
+ *     khác với request hiện tại (`requestKey`) nghĩa là đang chờ. Trong lúc chờ vẫn giữ danh sách cũ (làm mờ)
+ *     để trang không bị nhảy mỗi lần gõ.
+ */
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getErrorMessage } from '../api/client';
+import { listProjects } from '../api/projects';
 import { Button } from '../components/common/Button';
-import { useAuth } from '../hooks/useAuth';
-import styles from './placeholder.module.css';
+import { ErrorMessage } from '../components/common/ErrorMessage';
+import { Spinner } from '../components/common/Spinner';
+import { TextField } from '../components/common/TextField';
+import { InvitationsPanel } from '../components/invitations/InvitationsPanel';
+import { PageContainer } from '../components/layout/AppLayout';
+import { CreateProjectModal } from '../components/project/CreateProjectModal';
+import { ProjectCard } from '../components/project/ProjectCard';
+import { useDebounce } from '../hooks/useDebounce';
+import type { ProjectSummary } from '../types';
+import styles from './ProjectsPage.module.css';
+
+type Result = { key: string; items: ProjectSummary[]; error?: undefined } | { key: string; items?: undefined; error: string };
 
 export function ProjectsPage() {
-  const { user, logout } = useAuth();
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebounce(query.trim(), 300);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [result, setResult] = useState<Result | null>(null);
+  // Giữ danh sách thành công gần nhất để hiển thị trong lúc tải lần tiếp theo
+  const [lastItems, setLastItems] = useState<ProjectSummary[] | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  async function handleLogout() {
-    setLoggingOut(true);
-    setError(null);
-    try {
-      // Không cần navigate: user thành null thì ProtectedRoute tự chuyển về /login
-      await logout();
-    } catch (err) {
-      // logout() vẫn xóa user dù API lỗi, nên ở đây chỉ báo lỗi cho biết
-      setError(getErrorMessage(err));
-      setLoggingOut(false);
+  const requestKey = `${debouncedQuery}#${reloadKey}`;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listProjects({ q: debouncedQuery, signal: controller.signal })
+      .then((items) => {
+        setResult({ key: requestKey, items });
+        setLastItems(items);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setResult({ key: requestKey, error: getErrorMessage(err) });
+      });
+    return () => controller.abort();
+  }, [debouncedQuery, requestKey]);
+
+  const loading = result?.key !== requestKey;
+  const error = !loading ? result?.error : undefined;
+  const items = !loading && result?.items ? result.items : lastItems;
+  const searching = debouncedQuery !== '';
+
+  const reload = () => setReloadKey((k) => k + 1);
+
+  function renderList() {
+    // Lần đầu vào trang, chưa có gì để hiện
+    if (loading && !items) {
+      return (
+        <div className={styles.center}>
+          <Spinner size="lg" label="Đang tải danh sách dự án" />
+        </div>
+      );
     }
+    if (error) {
+      return (
+        <div className={styles.errorBox}>
+          <ErrorMessage>Không tải được danh sách dự án. {error}</ErrorMessage>
+          <Button variant="secondary" onClick={reload}>
+            Thử lại
+          </Button>
+        </div>
+      );
+    }
+    if (!items || items.length === 0) {
+      return searching ? (
+        <div className={styles.empty}>
+          <p>
+            Không có dự án nào có tên chứa “<strong>{debouncedQuery}</strong>”.
+          </p>
+          <Button variant="secondary" onClick={() => setQuery('')}>
+            Xóa tìm kiếm
+          </Button>
+        </div>
+      ) : (
+        <div className={styles.empty}>
+          <p>Bạn chưa tham gia dự án nào.</p>
+          <p className={styles.muted}>Tạo dự án mới, hoặc chờ lời mời từ chủ dự án khác.</p>
+          <Button onClick={() => setCreating(true)}>Tạo dự án đầu tiên</Button>
+        </div>
+      );
+    }
+    return (
+      <ul className={`${styles.grid} ${loading ? styles.stale : ''}`} aria-busy={loading}>
+        {items.map((project) => (
+          <li key={project.id}>
+            <ProjectCard project={project} />
+          </li>
+        ))}
+      </ul>
+    );
   }
 
   return (
-    <main className={styles.page}>
-      <div className={styles.card}>
-        <div className={styles.row}>
-          <div>
-            <h1>Dự án của tôi</h1>
-            <p className={styles.muted}>
-              Xin chào <strong>{user?.name}</strong> ({user?.email})
-            </p>
-          </div>
-          <Button variant="secondary" onClick={handleLogout} loading={loggingOut}>
-            Đăng xuất
-          </Button>
+    <PageContainer>
+      <div className={styles.page}>
+        <div className={styles.titleRow}>
+          <h1>Dự án của tôi</h1>
+          <Button onClick={() => setCreating(true)}>+ Tạo dự án</Button>
         </div>
-        <p className={styles.muted}>Danh sách dự án sẽ có ở Tuần 2.</p>
-        {error && <p className={styles.error}>{error}</p>}
+
+        <div className={styles.toolbar}>
+          <TextField
+            label="Tìm dự án"
+            className={styles.search}
+            type="search"
+            name="q"
+            placeholder="Nhập tên dự án…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            maxLength={100}
+            autoComplete="off"
+          />
+          {loading && items && (
+            <span className={styles.inlineLoading}>
+              <Spinner size="sm" /> Đang tìm…
+            </span>
+          )}
+        </div>
+
+        <InvitationsPanel onAccepted={reload} />
+
+        {renderList()}
       </div>
-    </main>
+
+      {creating && (
+        <CreateProjectModal
+          onClose={() => setCreating(false)}
+          onCreated={(project) => navigate(`/projects/${project.id}`)}
+        />
+      )}
+    </PageContainer>
   );
 }
