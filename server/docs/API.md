@@ -17,6 +17,7 @@ Client nên gửi header `x-socket-id: <socket.id>` khi gọi API. Khi có heade
 | 403 | `FORBIDDEN` |
 | 404 | `NOT_FOUND` (cũng trả khi không phải thành viên dự án) |
 | 409 | `EMAIL_TAKEN`, `VERSION_CONFLICT`, `COLUMN_NOT_EMPTY`, `ALREADY_MEMBER`, `ALREADY_INVITED`, `DUPLICATE`, `BUSY` |
+| 429 | `TOO_MANY_REQUESTS` (sai đăng nhập/đăng ký quá 10 lần trong 15 phút) |
 
 ## Tài khoản
 
@@ -95,7 +96,7 @@ Một task trả về có dạng:
 | GET | `/projects/:projectId/labels` | |
 | POST | `/projects/:projectId/labels` | `{ name, color: "#RRGGBB" }` |
 | PATCH | `/projects/:projectId/labels/:labelId` | `{ name?, color? }` |
-| DELETE | `/projects/:projectId/labels/:labelId` | |
+| DELETE | `/projects/:projectId/labels/:labelId` | Các thẻ đang gắn nhãn sẽ tăng `version` và được phát lại qua `task:updated` |
 
 ## Bình luận, chat, lịch sử
 

@@ -90,6 +90,7 @@ async function loadOwnComment(ctx: Ctx, projectId: string, taskId: string, comme
 }
 
 export async function updateComment(ctx: Ctx, projectId: string, taskId: string, commentId: string, content: string) {
+  const task = await assertTask(projectId, taskId);
   await loadOwnComment(ctx, projectId, taskId, commentId, false);
   const comment = await prisma.comment.update({
     where: { id: commentId },
@@ -97,11 +98,29 @@ export async function updateComment(ctx: Ctx, projectId: string, taskId: string,
     include: commentInclude,
   });
   realtime.toProject(projectId, ServerEvents.commentUpdated, comment, ctx.socketId);
+  await recordActivity({
+    projectId,
+    actorId: ctx.userId,
+    action: 'comment.updated',
+    entityType: 'task',
+    entityId: taskId,
+    meta: { title: task.title, commentId },
+  });
   return comment;
 }
 
 export async function deleteComment(ctx: Ctx, projectId: string, taskId: string, commentId: string) {
-  await loadOwnComment(ctx, projectId, taskId, commentId, true);
+  const task = await assertTask(projectId, taskId);
+  const comment = await loadOwnComment(ctx, projectId, taskId, commentId, true);
   await prisma.comment.delete({ where: { id: commentId } });
   realtime.toProject(projectId, ServerEvents.commentDeleted, { taskId, commentId }, ctx.socketId);
+  await recordActivity({
+    projectId,
+    actorId: ctx.userId,
+    action: 'comment.deleted',
+    entityType: 'task',
+    entityId: taskId,
+    // Chủ dự án xóa bình luận của người khác thì ghi rõ tác giả
+    meta: { title: task.title, commentId, authorId: comment.authorId },
+  });
 }
