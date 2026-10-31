@@ -17,7 +17,12 @@ Client nên gửi header `x-socket-id: <socket.id>` khi gọi API. Khi có heade
 | 403  | `FORBIDDEN`                                                                                                     |
 | 404  | `NOT_FOUND` (cũng trả khi không phải thành viên dự án)                                                          |
 | 409  | `EMAIL_TAKEN`, `VERSION_CONFLICT`, `COLUMN_NOT_EMPTY`, `ALREADY_MEMBER`, `ALREADY_INVITED`, `DUPLICATE`, `BUSY` |
+| 413  | `PAYLOAD_TOO_LARGE` (body lớn hơn 1MB)                                                                          |
 | 429  | `TOO_MANY_REQUESTS` (sai đăng nhập/đăng ký quá 10 lần trong 15 phút)                                            |
+
+## Kiểm tra server
+
+`GET /api/health` trả `{ "ok": true, "db": "up" }`. Nếu mất kết nối database thì trả 503 `{ "ok": false, "db": "down" }`.
 
 ## Tài khoản
 
