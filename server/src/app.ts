@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import './types';
 import { env, isProd } from './config/env';
 import { sessionMiddleware } from './lib/session';
+import { prisma } from './lib/prisma';
 import { apiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middlewares/error';
 
@@ -22,8 +23,14 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(sessionMiddleware);
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true });
+  // Dùng cho hosting kiểm tra server còn sống và còn kết nối được database
+  app.get('/api/health', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ ok: true, db: 'up' });
+    } catch {
+      res.status(503).json({ ok: false, db: 'down' });
+    }
   });
   app.use('/api', apiRouter);
 
