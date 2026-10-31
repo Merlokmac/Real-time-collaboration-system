@@ -26,9 +26,21 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Không tìm thấy dữ liệu' } });
     }
   }
-  if (err instanceof SyntaxError && 'body' in (err as object)) {
-    return res.status(400).json({ error: { code: 'BAD_JSON', message: 'JSON không hợp lệ' } });
-  }
+  const bodyError = bodyParserError(err);
+  if (bodyError) return res.status(bodyError.status).json({ error: bodyError.error });
   console.error(err);
   res.status(500).json({ error: { code: 'INTERNAL', message: 'Lỗi máy chủ' } });
+}
+
+// Lỗi do express.json ném ra khi body sai định dạng hoặc quá lớn
+function bodyParserError(err: unknown) {
+  if (typeof err !== 'object' || err === null || !('type' in err)) return null;
+  switch ((err as { type: unknown }).type) {
+    case 'entity.parse.failed':
+      return { status: 400, error: { code: 'BAD_JSON', message: 'JSON không hợp lệ' } };
+    case 'entity.too.large':
+      return { status: 413, error: { code: 'PAYLOAD_TOO_LARGE', message: 'Dữ liệu gửi lên quá lớn' } };
+    default:
+      return null;
+  }
 }
