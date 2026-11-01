@@ -9,6 +9,7 @@ const schema = z.object({
   CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
   COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   SESSION_MAX_AGE_DAYS: z.coerce.number().positive().default(7),
+  UPLOAD_DIR: z.string().default('uploads'),
 });
 
 const parsed = schema.safeParse(process.env);

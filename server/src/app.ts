@@ -5,6 +5,7 @@ import './types';
 import { env, isProd } from './config/env';
 import { sessionMiddleware } from './lib/session';
 import { prisma } from './lib/prisma';
+import { uploadsRoot } from './lib/uploads';
 import { apiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middlewares/error';
 
@@ -32,6 +33,14 @@ export function createApp() {
       res.status(503).json({ ok: false, db: 'down' });
     }
   });
+  // Đặt dưới /api để frontend dùng chung proxy /api của Vite
+  app.use(
+    '/api/uploads',
+    express.static(uploadsRoot, {
+      maxAge: '7d',
+      setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+    }),
+  );
   app.use('/api', apiRouter);
 
   app.use(notFoundHandler);
