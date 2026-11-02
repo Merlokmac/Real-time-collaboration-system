@@ -1,0 +1,111 @@
+.page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-8) var(--space-4);
+  background:
+    radial-gradient(circle at 15% 10%, rgb(37 99 235 / 0.1), transparent 45%),
+    radial-gradient(circle at 85% 90%, rgb(22 163 74 / 0.08), transparent 45%),
+    var(--color-bg);
+}
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  max-width: 420px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* Biểu tượng 3 cột Kanban vẽ bằng CSS */
+.logo {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 6px;
+  background: var(--color-primary);
+  border-radius: var(--radius-md);
+}
+
+.logo span {
+  width: 6px;
+  background: var(--color-on-primary);
+  border-radius: 2px;
+}
+
+.logo span:nth-child(1) {
+  height: 18px;
+}
+
+.logo span:nth-child(2) {
+  height: 12px;
+  opacity: 0.85;
+}
+
+.logo span:nth-child(3) {
+  height: 15px;
+  opacity: 0.7;
+}
+
+.brandName {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-8);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.title {
+  font-size: var(--font-size-xl);
+}
+
+.subtitle {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.footer {
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.footer a {
+  font-weight: 600;
+}
+
+/* Điện thoại: thẻ tràn gần hết chiều ngang, bớt lề trong */
+@media (max-width: 640px) {
+  .page {
+    place-items: start center;
+    padding: var(--space-8) var(--space-3);
+  }
+
+  .card {
+    padding: var(--space-5);
+    box-shadow: var(--shadow-sm);
+  }
+}

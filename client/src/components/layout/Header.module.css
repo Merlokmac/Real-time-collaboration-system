@@ -1,0 +1,210 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: var(--header-height);
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+/* Biểu tượng 3 cột Kanban (giống AuthLayout, nhỏ hơn) */
+.logo {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 5px;
+  background: var(--color-primary);
+  border-radius: var(--radius-sm);
+}
+
+.logo span {
+  width: 5px;
+  background: var(--color-on-primary);
+  border-radius: 1px;
+}
+
+.logo span:nth-child(1) {
+  height: 14px;
+}
+
+.logo span:nth-child(2) {
+  height: 9px;
+  opacity: 0.85;
+}
+
+.logo span:nth-child(3) {
+  height: 11px;
+  opacity: 0.7;
+}
+
+.brandName {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.desktopNav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.navLink:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.active,
+.active:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  min-width: 0;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1);
+  border-radius: var(--radius-full);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.user:hover {
+  text-decoration: none;
+  background: var(--color-surface-muted);
+}
+
+.userName {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: var(--space-2);
+}
+
+.menuButton {
+  display: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--color-text);
+}
+
+.menuButton:hover {
+  background: var(--color-surface-muted);
+}
+
+.mobileMenu {
+  display: none;
+}
+
+/* ---------- Điện thoại ---------- */
+@media (max-width: 640px) {
+  .inner {
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
+  }
+
+  .desktopNav,
+  .desktopLogout,
+  .userName {
+    display: none;
+  }
+
+  .right {
+    gap: var(--space-1);
+  }
+
+  .menuButton {
+    display: grid;
+  }
+
+  .mobileMenu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: var(--shadow-md);
+  }
+
+  .mobileMenu .navLink {
+    min-height: 44px;
+    font-size: var(--font-size-md);
+  }
+
+  .mobileMenu > :last-child {
+    margin-top: var(--space-2);
+  }
+
+  .mobileUser {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-3);
+    margin-bottom: var(--space-1);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .mobileUserText {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .mobileUserText span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+  }
+}
