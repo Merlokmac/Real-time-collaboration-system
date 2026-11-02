@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
+import { getErrorMessage } from '../api/client';
+import { inviteMember } from '../api/invitations';
 import { getBoard } from '../api/projects';
+import { ChatPanel } from '../components/chat/ChatPanel';
 import { socket } from '../realtime/socket';
 import { YjsTest } from '../realtime/YjsTest';
+
 import type {
   Board,
   ColumnTaskOrder,
@@ -36,14 +40,24 @@ export function BoardPage() {
   const [error, setError] =
     useState<string | null>(null);
 
-  // -------------------------
-  // Load board ban đầu
-  // -------------------------
+  const [inviteEmail, setInviteEmail] =
+    useState('');
+
+  const [inviteMessage, setInviteMessage] =
+    useState<string | null>(null);
+
+  const [inviting, setInviting] =
+    useState(false);
+
+ 
+  // LOAD BOARD BAN ĐẦU
+
 
   useEffect(() => {
     if (!projectId) return;
 
-    const controller = new AbortController();
+    const controller =
+      new AbortController();
 
     setLoading(true);
     setError(null);
@@ -53,13 +67,22 @@ export function BoardPage() {
     })
       .then(setBoard)
       .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
+        if (
+          controller.signal.aborted
+        ) {
+          return;
+        }
 
         console.error(err);
-        setError('Không tải được bảng dự án');
+
+        setError(
+          'Không tải được bảng dự án',
+        );
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (
+          !controller.signal.aborted
+        ) {
           setLoading(false);
         }
       });
@@ -69,15 +92,18 @@ export function BoardPage() {
     };
   }, [projectId]);
 
-  // -------------------------
-  // Socket.IO realtime
-  // -------------------------
+ 
+  // SOCKET.IO REALTIME KANBAN
+
 
   useEffect(() => {
     if (!projectId) return;
 
     const joinProject = () => {
-      socket.emit('project:join', projectId);
+      socket.emit(
+        'project:join',
+        projectId,
+      );
 
       console.log(
         'Join project room:',
@@ -85,8 +111,8 @@ export function BoardPage() {
       );
     };
 
-    // Reconnect xong thì tải lại board
-    // để không mất event xảy ra lúc mất mạng.
+    // Socket reconnect thì join room lại
+    // và tải board mới nhất.
     const handleConnect = () => {
       joinProject();
 
@@ -95,77 +121,103 @@ export function BoardPage() {
         .catch(console.error);
     };
 
-    // CREATE
-    const onTaskCreated = (task: Task) => {
+   
+    // TASK CREATED
+   
+
+    const onTaskCreated = (
+      task: Task,
+    ) => {
       console.log(
         'REALTIME task:created',
         task,
       );
 
       setBoard((current) => {
-        if (!current) return current;
+        if (!current) {
+          return current;
+        }
 
         return {
           ...current,
-          columns: current.columns.map(
-            (column) => {
-              if (
-                column.id !== task.columnId
-              ) {
-                return column;
-              }
 
-              // tránh bị duplicate event
-              if (
-                column.tasks.some(
-                  (item) =>
-                    item.id === task.id,
-                )
-              ) {
-                return column;
-              }
+          columns:
+            current.columns.map(
+              (column) => {
+                if (
+                  column.id !==
+                  task.columnId
+                ) {
+                  return column;
+                }
 
-              return {
-                ...column,
-                tasks: [
-                  ...column.tasks,
-                  task,
-                ],
-              };
-            },
-          ),
+                // Tránh duplicate
+                if (
+                  column.tasks.some(
+                    (item) =>
+                      item.id ===
+                      task.id,
+                  )
+                ) {
+                  return column;
+                }
+
+                return {
+                  ...column,
+
+                  tasks: [
+                    ...column.tasks,
+                    task,
+                  ],
+                };
+              },
+            ),
         };
       });
     };
 
-    // UPDATE
-    const onTaskUpdated = (task: Task) => {
+   
+    // TASK UPDATED
+    
+
+    const onTaskUpdated = (
+      task: Task,
+    ) => {
       console.log(
         'REALTIME task:updated',
         task,
       );
 
       setBoard((current) => {
-        if (!current) return current;
+        if (!current) {
+          return current;
+        }
 
         return {
           ...current,
-          columns: current.columns.map(
-            (column) => ({
-              ...column,
-              tasks: column.tasks.map(
-                (item) =>
-                  item.id === task.id
-                    ? task
-                    : item,
-              ),
-            }),
-          ),
+
+          columns:
+            current.columns.map(
+              (column) => ({
+                ...column,
+
+                tasks:
+                  column.tasks.map(
+                    (item) =>
+                      item.id ===
+                      task.id
+                        ? task
+                        : item,
+                  ),
+              }),
+            ),
         };
       });
     };
 
-    // MOVE
+    // TASK MOVED
+
+
     const onTaskMoved = (
       payload: TaskMovedPayload,
     ) => {
@@ -175,12 +227,12 @@ export function BoardPage() {
       );
 
       setBoard((current) => {
-        if (!current) return current;
+        if (!current) {
+          return current;
+        }
 
-        const tasksById = new Map<
-          string,
-          Task
-        >();
+        const tasksById =
+          new Map<string, Task>();
 
         current.columns.forEach(
           (column) => {
@@ -195,7 +247,7 @@ export function BoardPage() {
           },
         );
 
-        // task vừa move là bản mới nhất
+        // Bản task từ server là mới nhất
         tasksById.set(
           payload.task.id,
           payload.task,
@@ -213,44 +265,67 @@ export function BoardPage() {
         return {
           ...current,
 
-          columns: current.columns.map(
-            (column) => {
-              const taskIds =
-                orders.get(column.id);
+          columns:
+            current.columns.map(
+              (column) => {
+                const taskIds =
+                  orders.get(
+                    column.id,
+                  );
 
-              if (!taskIds) {
-                return column;
-              }
+                if (!taskIds) {
+                  return column;
+                }
 
-              const tasks = taskIds
-                .map((taskId, index) => {
-                  const task =
-                    tasksById.get(taskId);
+                const tasks =
+                  taskIds
+                    .map(
+                      (
+                        taskId,
+                        index,
+                      ) => {
+                        const task =
+                          tasksById.get(
+                            taskId,
+                          );
 
-                  if (!task) return null;
+                        if (!task) {
+                          return null;
+                        }
 
-                  return {
-                    ...task,
-                    columnId: column.id,
-                    position: index,
-                  };
-                })
-                .filter(
-                  (task): task is Task =>
-                    task !== null,
-                );
+                        return {
+                          ...task,
 
-              return {
-                ...column,
-                tasks,
-              };
-            },
-          ),
+                          columnId:
+                            column.id,
+
+                          position:
+                            index,
+                        };
+                      },
+                    )
+                    .filter(
+                      (
+                        task,
+                      ): task is Task =>
+                        task !==
+                        null,
+                    );
+
+                return {
+                  ...column,
+                  tasks,
+                };
+              },
+            ),
         };
       });
     };
 
-    // DELETE
+    
+    // TASK DELETED
+
+
     const onTaskDeleted = (
       payload: TaskDeletedPayload,
     ) => {
@@ -260,74 +335,82 @@ export function BoardPage() {
       );
 
       setBoard((current) => {
-        if (!current) return current;
+        if (!current) {
+          return current;
+        }
 
         return {
           ...current,
 
-          columns: current.columns.map(
-            (column) => {
-              if (
-                column.id !==
-                payload.columnId
-              ) {
-                return column;
-              }
+          columns:
+            current.columns.map(
+              (column) => {
+                if (
+                  column.id !==
+                  payload.columnId
+                ) {
+                  return column;
+                }
 
-              const tasksById =
-                new Map(
-                  column.tasks
-                    .filter(
-                      (task) =>
-                        task.id !==
-                        payload.taskId,
-                    )
-                    .map((task) => [
-                      task.id,
-                      task,
-                    ]),
-                );
-
-              const tasks =
-                payload.taskIds
-                  .map(
-                    (
-                      taskId,
-                      index,
-                    ) => {
-                      const task =
-                        tasksById.get(
-                          taskId,
-                        );
-
-                      if (!task) {
-                        return null;
-                      }
-
-                      return {
-                        ...task,
-                        position:
-                          index,
-                      };
-                    },
-                  )
-                  .filter(
-                    (
-                      task,
-                    ): task is Task =>
-                      task !== null,
+                const tasksById =
+                  new Map(
+                    column.tasks
+                      .filter(
+                        (task) =>
+                          task.id !==
+                          payload.taskId,
+                      )
+                      .map(
+                        (task) => [
+                          task.id,
+                          task,
+                        ],
+                      ),
                   );
 
-              return {
-                ...column,
-                tasks,
-              };
-            },
-          ),
+                const tasks =
+                  payload.taskIds
+                    .map(
+                      (
+                        taskId,
+                        index,
+                      ) => {
+                        const task =
+                          tasksById.get(
+                            taskId,
+                          );
+
+                        if (!task) {
+                          return null;
+                        }
+
+                        return {
+                          ...task,
+                          position:
+                            index,
+                        };
+                      },
+                    )
+                    .filter(
+                      (
+                        task,
+                      ): task is Task =>
+                        task !==
+                        null,
+                    );
+
+                return {
+                  ...column,
+                  tasks,
+                };
+              },
+            ),
         };
       });
     };
 
+    // Nếu socket đang kết nối
+    // thì join project ngay.
     if (socket.connected) {
       joinProject();
     }
@@ -390,6 +473,51 @@ export function BoardPage() {
     };
   }, [projectId]);
 
+ 
+  // MỜI THÀNH VIÊN
+ 
+
+  async function handleInvite() {
+    if (!projectId) return;
+
+    const email =
+      inviteEmail.trim();
+
+    if (!email) {
+      setInviteMessage(
+        'Nhập email người muốn mời',
+      );
+
+      return;
+    }
+
+    try {
+      setInviting(true);
+      setInviteMessage(null);
+
+      await inviteMember(
+        projectId,
+        email,
+      );
+
+      setInviteEmail('');
+
+      setInviteMessage(
+        `Đã gửi lời mời tới ${email}`,
+      );
+    } catch (err) {
+      setInviteMessage(
+        getErrorMessage(err),
+      );
+    } finally {
+      setInviting(false);
+    }
+  }
+
+  
+  // LOADING / ERROR
+
+
   if (loading) {
     return (
       <main className={styles.page}>
@@ -418,6 +546,10 @@ export function BoardPage() {
       )
       .at(0);
 
+
+  // UI
+
+
   return (
     <main className={styles.page}>
       <div className={styles.card}>
@@ -425,7 +557,9 @@ export function BoardPage() {
 
         <p className={styles.muted}>
           Mã dự án:{' '}
-          <span className={styles.code}>
+          <span
+            className={styles.code}
+          >
             {projectId}
           </span>
         </p>
@@ -437,10 +571,85 @@ export function BoardPage() {
             : 'Chưa kết nối'}
         </p>
 
+        {/* 
+            MỜI THÀNH VIÊN
+        */}
+
+        <hr />
+
+        <section>
+          <h2>Mời thành viên</h2>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+            }}
+          >
+            <input
+              type="email"
+              placeholder="bao@demo.vn"
+              value={inviteEmail}
+              disabled={inviting}
+              onChange={(event) =>
+                setInviteEmail(
+                  event.target
+                    .value,
+                )
+              }
+              onKeyDown={(
+                event,
+              ) => {
+                if (
+                  event.key ===
+                  'Enter'
+                ) {
+                  void handleInvite();
+                }
+              }}
+              style={{
+                padding: 8,
+                minWidth: 240,
+              }}
+            />
+
+            <button
+              type="button"
+              disabled={inviting}
+              onClick={() =>
+                void handleInvite()
+              }
+            >
+              {inviting
+                ? 'Đang gửi...'
+                : 'Mời'}
+            </button>
+          </div>
+
+          {inviteMessage && (
+            <p
+              className={
+                styles.muted
+              }
+            >
+              {inviteMessage}
+            </p>
+          )}
+        </section>
+
+        <hr />
+
+        {/*
+            KANBAN
+         */}
+
         <div
           style={{
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems:
+              'flex-start',
             gap: 16,
             overflowX: 'auto',
             marginTop: 20,
@@ -455,8 +664,10 @@ export function BoardPage() {
                   minWidth: 250,
                   width: 250,
                   padding: 12,
+
                   border:
                     '1px solid #ddd',
+
                   borderRadius: 8,
                 }}
               >
@@ -478,10 +689,15 @@ export function BoardPage() {
                       key={task.id}
                       style={{
                         padding: 12,
-                        marginBottom: 10,
+
+                        marginBottom:
+                          10,
+
                         border:
                           '1px solid #ccc',
-                        borderRadius: 6,
+
+                        borderRadius:
+                          6,
                       }}
                     >
                       <strong>
@@ -524,17 +740,37 @@ export function BoardPage() {
           )}
         </div>
 
+        {/* 
+            YJS
+         */}
+
         {firstTask && (
           <>
             <hr />
 
             <YjsTest
-              taskId={firstTask.id}
+              taskId={
+                firstTask.id
+              }
             />
           </>
         )}
 
-        <p>
+        {/* 
+            LIVE CHAT
+        */}
+
+        {projectId && (
+          <ChatPanel
+            projectId={projectId}
+          />
+        )}
+
+        <p
+          style={{
+            marginTop: 20,
+          }}
+        >
           <Link to="/projects">
             ← Về Dự án của tôi
           </Link>

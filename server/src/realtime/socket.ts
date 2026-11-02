@@ -15,30 +15,80 @@ export function attachSocketIO(server: HttpServer) {
     },
   });
 
-  // Xác thực socket bằng cookie đăng nhập hiện tại
+  // Xác thực socket bằng session và lưu thông tin user
   io.use(async (socket, next) => {
-    const userId = await getSessionUserId(socket.request);
+    try {
+      const userId = await getSessionUserId(socket.request);
 
-    if (!userId) {
-      return next(new Error('UNAUTHORIZED'));
+      if (!userId) {
+        return next(new Error('UNAUTHORIZED'));
+      }
+
+      const user = await prisma.user.findUnique({
+        where: {
+          id: userId,
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+      if (!user) {
+        return next(new Error('UNAUTHORIZED'));
+      }
+
+      socket.data.userId = user.id;
+      socket.data.userName = user.name;
+
+      next();
+    } catch {
+      next(new Error('UNAUTHORIZED'));
+    }
+  });
+
+  // Phát danh sách user đang online trong project
+  async function broadcastPresence(projectId: string) {
+    const room = projectRoom(projectId);
+
+    const sockets = await io
+      .in(room)
+      .fetchSockets();
+
+    const users = new Map<string, string>();
+
+    for (const peer of sockets) {
+      const userId = String(peer.data.userId ?? '');
+      const name = String(peer.data.userName ?? 'Người dùng');
+
+      if (!userId) continue;
+
+      users.set(userId, name);
     }
 
-    socket.data.userId = userId;
-    next();
-  });
+    io.to(room).emit('presence:updated', {
+      projectId,
+      users: Array.from(users.entries()).map(([id, name]) => ({
+        id,
+        name,
+      })),
+    });
+  }
 
   io.on('connection', (socket) => {
     const userId = String(socket.data.userId);
+    const userName = String(socket.data.userName);
+
+    const joinedProjects = new Set<string>();
 
     console.log('Socket connected:', {
       socketId: socket.id,
       userId,
     });
 
-    // Mỗi user có một room riêng
     socket.join(userRoom(userId));
 
-    // User xin vào room của một project
+    // Join project room sau khi kiểm tra quyền thành viên
     socket.on('project:join', async (projectId: string) => {
       const membership = await prisma.projectMember.findUnique({
         where: {
@@ -50,57 +100,154 @@ export function attachSocketIO(server: HttpServer) {
       });
 
       if (!membership) {
-        console.log(`User ${userId} không có quyền vào project ${projectId}`);
+        console.log(
+          `User ${userId} không có quyền vào project ${projectId}`,
+        );
+
         return;
       }
 
       await socket.join(projectRoom(projectId));
 
+      joinedProjects.add(projectId);
+
       console.log(
         `Socket ${socket.id} joined ${projectRoom(projectId)}`,
       );
+
+      await broadcastPresence(projectId);
     });
 
+    // Rời project room và cập nhật presence
     socket.on('project:leave', async (projectId: string) => {
+      socket
+        .to(projectRoom(projectId))
+        .emit('chat:typing', {
+          projectId,
+          userId,
+          name: userName,
+          typing: false,
+        });
+
       await socket.leave(projectRoom(projectId));
+
+      joinedProjects.delete(projectId);
+
+      await broadcastPresence(projectId);
 
       console.log(
         `Socket ${socket.id} left ${projectRoom(projectId)}`,
       );
     });
 
+    // Phát trạng thái đang nhập cho những user khác
+    socket.on(
+      'chat:typing',
+      (payload: {
+        projectId?: string;
+        typing?: boolean;
+      }) => {
+        const projectId = payload?.projectId;
+
+        if (
+          !projectId ||
+          typeof payload.typing !== 'boolean'
+        ) {
+          return;
+        }
+
+        const room = projectRoom(projectId);
+
+        if (!socket.rooms.has(room)) {
+          return;
+        }
+
+        socket
+          .to(room)
+          .emit('chat:typing', {
+            projectId,
+            userId,
+            name: userName,
+            typing: payload.typing,
+          });
+      },
+    );
+
+    // Báo ngừng typing trước khi socket disconnect
+    socket.on('disconnecting', () => {
+      for (const projectId of joinedProjects) {
+        socket
+          .to(projectRoom(projectId))
+          .emit('chat:typing', {
+            projectId,
+            userId,
+            name: userName,
+            typing: false,
+          });
+      }
+    });
+
+    // Cập nhật presence sau khi user mất kết nối
     socket.on('disconnect', (reason) => {
       console.log('Socket disconnected:', {
         socketId: socket.id,
         userId,
         reason,
       });
+
+      for (const projectId of joinedProjects) {
+        void broadcastPresence(projectId);
+      }
     });
   });
 
-  // Nối API hiện tại với Socket.IO
+  // Nối REST API với Socket.IO
   setRealtimeBridge({
-    toProject(projectId, event, payload, exceptSocketId) {
+    toProject(
+      projectId,
+      event,
+      payload,
+      exceptSocketId,
+    ) {
       const room = io.to(projectRoom(projectId));
 
       if (exceptSocketId) {
-        room.except(exceptSocketId).emit(event, payload);
+        room
+          .except(exceptSocketId)
+          .emit(event, payload);
+
         return;
       }
 
       room.emit(event, payload);
     },
 
-    toUser(userId, event, payload) {
-      io.to(userRoom(userId)).emit(event, payload);
+    toUser(
+      userId,
+      event,
+      payload,
+    ) {
+      io.to(userRoom(userId)).emit(
+        event,
+        payload,
+      );
     },
 
-    revokeAccess(projectId, userId) {
-      io.in(userRoom(userId)).socketsLeave(projectRoom(projectId));
+    revokeAccess(
+      projectId,
+      userId,
+    ) {
+      io.in(userRoom(userId)).socketsLeave(
+        projectRoom(projectId),
+      );
+
+      void broadcastPresence(projectId);
     },
 
     closeProject(projectId) {
-      io.in(projectRoom(projectId)).socketsLeave(projectRoom(projectId));
+      io.in(projectRoom(projectId)).socketsLeave(
+        projectRoom(projectId),
+      );
     },
   });
 
