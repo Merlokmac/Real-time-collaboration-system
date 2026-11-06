@@ -3,13 +3,14 @@ import { env } from './config/env';
 import { createApp } from './app';
 import { prisma } from './lib/prisma';
 import { pgPool } from './lib/session';
+import { attachSocketIO } from './realtime/socket';
+import { attachYjs } from './realtime/yjs';
 
 const app = createApp();
 const server = http.createServer(app);
 
-// Phần realtime (Socket.IO + Yjs) gắn vào cùng server tại đây, ví dụ:
-//   attachSocketIO(server);   -> gọi setRealtimeBridge(...) bên trong
-//   attachYjs(server);        -> dùng authorizeDocument + yjsPersistence từ src/collab
+attachSocketIO(server);
+attachYjs(server);
 
 server.listen(env.PORT, () => {
   console.log(`Server chạy tại http://localhost:${env.PORT}`);
