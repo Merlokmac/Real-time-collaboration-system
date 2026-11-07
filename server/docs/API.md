@@ -26,15 +26,16 @@ Client nên gửi header `x-socket-id: <socket.id>` khi gọi API. Khi có heade
 
 ## Tài khoản
 
-| Method | Path               | Body                                                                     | Trả về                             |
-| ------ | ------------------ | ------------------------------------------------------------------------ | ---------------------------------- |
-| POST   | `/auth/register`   | `{ email, password (>=8), name }`                                        | 201 `{ user }`                     |
-| POST   | `/auth/login`      | `{ email, password }`                                                    | `{ user }`                         |
-| POST   | `/auth/logout`     |                                                                          | 204                                |
-| GET    | `/auth/me`         |                                                                          | `{ user }`                         |
-| PATCH  | `/users/me`        | `{ name?, avatarUrl? }`                                                  | `{ user }`                         |
-| POST   | `/users/me/avatar` | `multipart/form-data`, trường `avatar` (png, jpg, gif, webp, tối đa 2MB) | `{ user }`                         |
-| DELETE | `/users/me/avatar` |                                                                          | `{ user }` (`avatarUrl` về `null`) |
+| Method | Path               | Body                                                                                 | Trả về                                 |
+| ------ | ------------------ | ------------------------------------------------------------------------------------ | -------------------------------------- |
+| POST   | `/auth/register`   | `{ email, password (>=8), name }`                                                    | 201 `{ user }`                         |
+| POST   | `/auth/login`      | `{ email, password }`                                                                | `{ user }`                             |
+| POST   | `/auth/logout`     |                                                                                      | 204                                    |
+| GET    | `/auth/me`         |                                                                                      | `{ user }`                             |
+| PATCH  | `/users/me`        | `{ name?, avatarUrl? }`                                                              | `{ user }`                             |
+| POST   | `/users/me/avatar` | `multipart/form-data`, trường `avatar` (png, jpg, gif, webp, tối đa 2MB)             | `{ user }`                             |
+| DELETE | `/users/me/avatar` |                                                                                      | `{ user }` (`avatarUrl` về `null`)     |
+| GET    | `/users/me/tasks`  | `?status=open\|done\|all` (mặc định `open`), `?overdue=true`, `?limit=` (tối đa 100) | `{ items: [task + project + column] }` |
 
 Ảnh tải lên có `avatarUrl` dạng `/api/uploads/avatars/<tên-file>`, dùng thẳng làm `src` của thẻ `<img>` (đi qua proxy `/api` của Vite). Đổi ảnh hoặc xóa ảnh thì file cũ trên server bị xóa. Lỗi riêng: `400 INVALID_IMAGE` (không phải ảnh), `413 FILE_TOO_LARGE` (quá 2MB).
 
