@@ -7,3 +7,4 @@ Frontend đang làm theo **code backend**.
 | --- | --- | --- | --- | --- | --- |
 | 1 | `PATCH /projects/:projectId` | Trả `{ project }` là bản ghi thô, **không có** `role` và `memberCount` (khác `GET /projects/:projectId`) | Trả cùng dạng với GET (có `role`, `memberCount`), hoặc ghi rõ trong API.md | Frontend phải gộp tay với dữ liệu cũ; sự kiện `project:updated` cũng mang bản thiếu 2 trường này | Chưa báo |
 | 2 | `PATCH /users/me` | `avatarUrl` chỉ kiểm tra `z.string().url()`, nên nhận cả `javascript:...`, `data:...` | Chỉ nhận `http://` / `https://` | An toàn khi người khác hiển thị ảnh/đường dẫn này. Frontend đã chặn ở form hồ sơ nhưng server vẫn nên chặn | Chưa báo |
+| 3 | `DELETE /projects/:projectId/columns/:columnId` | Xóa cột cuối cùng của dự án trả 400 `BAD_REQUEST` "Dự án cần ít nhất một cột" | Ghi vào API.md (bảng mã lỗi / mục cột) | API.md chỉ nói "cột phải trống"; frontend đã hiện message của server trong hộp thoại xóa | Chưa báo |
