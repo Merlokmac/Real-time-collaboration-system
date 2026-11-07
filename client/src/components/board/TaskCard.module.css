@@ -1,0 +1,126 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  /*
+   * Điện thoại: vẫn cho vuốt để cuộn (không dùng touch-action: none). Thẻ chỉ được nhấc khi giữ ngón tay
+   * yên ~0,25 giây (TouchSensor), nên vuốt ngang qua thẻ là cuộn bảng chứ không kéo thẻ.
+   */
+  touch-action: manipulation;
+  /* Giữ lâu trên iOS/Android không bôi đen chữ hay hiện menu "Sao chép" */
+  -webkit-touch-callout: none;
+  user-select: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+/* Chỗ trống trong cột nơi thẻ sẽ rơi vào khi thả */
+.placeholder {
+  opacity: 0.35;
+  box-shadow: none;
+}
+
+/*
+ * Bản đang bay theo con trỏ. Không xoay/phóng to: khung của overlay được dnd-kit dùng để tính va chạm
+ * khi kéo bằng bàn phím, xoay làm khung lệch và phím mũi tên chọn sai đích.
+ */
+.overlay {
+  cursor: grabbing;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Đã thả, đang chờ server */
+.saving {
+  opacity: 0.7;
+}
+
+.savingText {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+/* Thẻ quá hạn: viền trái đỏ để nhìn lướt cả bảng cũng thấy */
+.overdueCard {
+  border-left: 3px solid var(--color-danger);
+}
+
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.label {
+  max-width: 100%;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Mô tả chỉ hiện một dòng */
+.description {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.overdue {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-text);
+  font-weight: 600;
+}
+
+.overdueText {
+  margin-left: var(--space-1);
+}
+
+.assignee {
+  display: inline-flex;
+  flex-shrink: 0;
+}
