@@ -1,0 +1,54 @@
+.trigger {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+.trigger:hover,
+.trigger[aria-expanded='true'] {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.menu {
+  position: fixed;
+  z-index: 90; /* dưới Modal (100) */
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: var(--space-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.item {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--color-surface-muted);
+}
+
+.danger {
+  color: var(--color-danger);
+}
+
+/* Điện thoại: mục cao hơn cho dễ chạm */
+@media (max-width: 640px) {
+  .item {
+    padding: var(--space-3);
+    font-size: var(--font-size-md);
+  }
+}
