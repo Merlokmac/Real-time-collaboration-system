@@ -1,0 +1,75 @@
+/* Chiếm hết phần còn lại của trang (BoardPage là flex dọc), tự cuộn ngang */
+.scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.columns {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  height: 100%;
+  width: max-content;
+  padding: var(--space-1) var(--space-4) var(--space-4);
+}
+
+/*
+ * li không cao quá vùng bảng; cột bên trong là flex item co lại được (min-height: 0),
+ * nên cột dài sẽ bị giới hạn và danh sách thẻ tự cuộn dọc
+ */
+.columnItem {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+
+.addColumn {
+  flex-shrink: 0;
+  width: var(--column-width);
+}
+
+/* Điện thoại: vuốt ngang dừng ở mép từng cột */
+@media (max-width: 640px) {
+  .scroller {
+    scroll-snap-type: x mandatory;
+    scroll-padding: 0 var(--space-3);
+  }
+
+  .columns {
+    padding: var(--space-1) var(--space-3) var(--space-3);
+  }
+
+  .columnItem,
+  .addColumn {
+    scroll-snap-align: start;
+  }
+}
+
+/* Đang kéo: tắt scroll-snap để dnd-kit tự cuộn bảng mượt khi kéo tới mép, không bị giật về mép cột */
+.scroller.dragging {
+  scroll-snap-type: none;
+}
+
+/* Bản xem trước của cột đang được kéo */
+.columnOverlay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: var(--column-width);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-sm);
+  cursor: grabbing;
+}
+
+.columnOverlay span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}

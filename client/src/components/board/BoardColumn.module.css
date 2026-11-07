@@ -1,0 +1,172 @@
+/* Cột cao theo nội dung, nhưng không vượt quá chiều cao vùng bảng: danh sách thẻ tự cuộn dọc */
+.column {
+  display: flex;
+  flex-direction: column;
+  width: var(--column-width);
+  min-height: 0;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+/* Chỗ của cột đang được kéo */
+.placeholder {
+  opacity: 0.4;
+}
+
+/* Tay nắm kéo cột. touch-action: manipulation để vuốt ngang trên điện thoại vẫn cuộn bảng */
+.handle {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: calc(-1 * var(--space-1));
+  border-radius: var(--radius-sm);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-md);
+  cursor: grab;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.handle:hover {
+  background: rgb(15 23 42 / 0.06);
+  color: var(--color-text);
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.saving {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-style: italic;
+}
+
+/* Cột hoàn thành: viền trên màu xanh lá */
+.done {
+  border-top: 3px solid var(--color-success);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+
+.title {
+  /* Đủ chỗ cho tên cột; thiếu chỗ thì nhãn "Hoàn thành" xuống dòng thay vì ép tên thành "Hoà…" */
+  min-width: 50%;
+  flex: 1;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.titleButton {
+  max-width: 100%;
+  padding: var(--space-1) var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+}
+
+.titleButton:hover {
+  background: rgb(15 23 42 / 0.06);
+}
+
+.count {
+  min-width: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: rgb(15 23 42 / 0.08);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+.doneBadge {
+  order: 10; /* xuống dòng dưới tên cột khi hẹp */
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.menu {
+  flex-shrink: 0;
+}
+
+.rename {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.renameInput {
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--focus-ring);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.renameInput:focus {
+  outline: none;
+}
+
+.invalid {
+  border-color: var(--color-danger);
+}
+
+.error {
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+}
+
+.rename .error {
+  padding: 0;
+}
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  padding: 0 var(--space-2) var(--space-1);
+  overflow-y: auto;
+}
+
+.empty {
+  padding: var(--space-3);
+  margin: 0 var(--space-2);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+.footer {
+  padding: var(--space-2);
+}
