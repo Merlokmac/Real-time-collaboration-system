@@ -13,6 +13,7 @@ import { labelsRouter } from './modules/labels/labels.routes';
 import { commentsRouter } from './modules/comments/comments.routes';
 import { messagesRouter } from './modules/messages/messages.routes';
 import { activityRouter } from './modules/activity/activity.routes';
+import { statsRouter } from './modules/stats/stats.routes';
 
 export const apiRouter = Router();
 
@@ -34,6 +35,7 @@ project.use('/tasks', tasksRouter);
 project.use('/labels', labelsRouter);
 project.use('/messages', messagesRouter);
 project.use('/activity', activityRouter);
+project.use('/stats', statsRouter);
 project.use('/', projectDetailRouter);
 
 apiRouter.use('/projects/:projectId', project);
