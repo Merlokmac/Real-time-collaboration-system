@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
-import { getErrorMessage } from '../api/client';
+import { ApiError, getErrorMessage } from '../api/client';
 import { inviteMember } from '../api/invitations';
 import { getBoard } from '../api/projects';
 import { ChatPanel } from '../components/chat/ChatPanel';
@@ -28,6 +28,8 @@ type TaskDeletedPayload = {
 };
 
 export function BoardPage() {
+  const navigate = useNavigate();
+
   const { projectId } =
     useParams<{ projectId: string }>();
 
@@ -73,11 +75,17 @@ export function BoardPage() {
           return;
         }
 
+        if (
+          err instanceof ApiError &&
+          err.status === 404
+        ) {
+          navigate('/projects', { replace: true });
+          return;
+        }
+
         console.error(err);
 
-        setError(
-          'Không tải được bảng dự án',
-        );
+        setError('Không tải được bảng dự án');
       })
       .finally(() => {
         if (
@@ -90,10 +98,43 @@ export function BoardPage() {
     return () => {
       controller.abort();
     };
-  }, [projectId]);
+  },[projectId, navigate]);
+
+
+
+  // Xử lý khi bị thu hồi quyền truy cập project
+  useEffect(() => {
+    if (!projectId) return;
+
+    const handleAccessRevoked = (
+      payload: { projectId: string },
+    ) => {
+      if (payload.projectId !== projectId) return;
+
+      console.log('Project access revoked:', projectId);
+
+      navigate('/projects', {
+        replace: true,
+      });
+    };
+
+    socket.on(
+      'project:access_revoked',
+      handleAccessRevoked,
+    );
+
+    return () => {
+      socket.off(
+        'project:access_revoked',
+        handleAccessRevoked,
+      );
+    };
+  }, [projectId, navigate]);
+
 
  
   // SOCKET.IO REALTIME KANBAN
+
 
 
   useEffect(() => {

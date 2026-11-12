@@ -5,6 +5,7 @@ import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { getSessionUserId } from '../lib/session';
 import { setRealtimeBridge } from './bridge';
+import { revokeYjsConnections } from './yjs';
 import { projectRoom, userRoom } from './events';
 
 export function attachSocketIO(server: HttpServer) {
@@ -233,21 +234,33 @@ export function attachSocketIO(server: HttpServer) {
       );
     },
 
-    revokeAccess(
-      projectId,
-      userId,
-    ) {
+    
+    revokeAccess(projectId, userId) {
+      // Báo cho user bị kick biết đã mất quyền
+      io.to(userRoom(userId)).emit(
+        'project:access_revoked',
+        { projectId },
+      );
+
+      // Thu hồi quyền nhận realtime của project
       io.in(userRoom(userId)).socketsLeave(
         projectRoom(projectId),
       );
 
+      // Đóng các WebSocket Yjs của thành viên bị kick
+      revokeYjsConnections(projectId, userId);
+
+      // Cập nhật danh sách online
       void broadcastPresence(projectId);
     },
+
 
     closeProject(projectId) {
       io.in(projectRoom(projectId)).socketsLeave(
         projectRoom(projectId),
       );
+      // Đóng toàn bộ kết nối Yjs của project
+      revokeYjsConnections(projectId);
     },
   });
 

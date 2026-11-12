@@ -1,5 +1,5 @@
 import type { Server as HttpServer } from 'node:http';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 
 import { getSessionUserId } from '../lib/session';
 import {
@@ -8,10 +8,36 @@ import {
 } from '../collab';
 
 // y-websocket 1.5.4 chưa có type declaration tốt cho server utils
-const {
+
+import {
   setupWSConnection,
   setPersistence,
-} = require('y-websocket/bin/utils');
+} from 'y-websocket/bin/utils';
+
+
+type YjsConnection = {
+  ws: WebSocket;
+  userId: string;
+  projectId: string;
+};
+
+const connections = new Set<YjsConnection>();
+
+// Đóng kết nối Yjs khi thành viên mất quyền
+export function revokeYjsConnections(
+  projectId: string,
+  userId?: string,
+) {
+  for (const connection of connections) {
+    if (connection.projectId !== projectId) continue;
+    if (userId && connection.userId !== userId) continue;
+
+    connection.ws.terminate();
+    connections.delete(connection);
+  }
+}
+
+
 
 export function attachYjs(server: HttpServer) {
   const wss = new WebSocketServer({
@@ -59,25 +85,57 @@ export function attachYjs(server: HttpServer) {
       }
 
       // 3. Upgrade thành WebSocket
+      
+      // Upgrade và theo dõi kết nối Yjs
       wss.handleUpgrade(
         request,
         socket,
         head,
         (ws) => {
-          console.log('Yjs connected:', {
+          const connection: YjsConnection = {
+            ws,
             userId,
-            docName,
+            projectId: access.projectId,
+          };
+
+          connections.add(connection);
+
+          ws.on('close', () => {
+            connections.delete(connection);
           });
 
-          setupWSConnection(
-            ws,
-            request,
-            {
-              docName,
-            },
-          );
+          // Kiểm tra lại quyền để tránh kết nối trong lúc bị kick
+          void (async () => {
+            try {
+              const currentAccess = await authorizeDocument(
+                userId,
+                docName,
+              );
+
+              if (
+                !currentAccess ||
+                currentAccess.projectId !== access.projectId
+              ) {
+                ws.terminate();
+                return;
+              }
+
+              if (ws.readyState !== WebSocket.OPEN) return;
+
+              console.log('Yjs connected:', {
+                userId,
+                docName,
+              });
+
+              setupWSConnection(ws, request, { docName });
+            } catch (error) {
+              console.error('Yjs connection error:', error);
+              ws.terminate();
+            }
+          })();
         },
       );
+
     } catch (error) {
       console.error('Yjs upgrade error:', error);
 
