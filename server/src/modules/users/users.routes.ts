@@ -6,6 +6,7 @@ import { publicUser } from '../../lib/selects';
 import { badRequest, HttpError } from '../../lib/errors';
 import { AVATAR_MAX_BYTES, detectImage, removeAvatarFile, saveAvatar } from '../../lib/uploads';
 import { currentUserId } from '../../middlewares/auth';
+import { listMyTasks } from '../tasks/mytasks.service';
 
 export const usersRouter = Router();
 
@@ -23,6 +24,20 @@ usersRouter.patch('/me', async (req, res) => {
   const user = await prisma.user.update({ where: { id: userId }, data: body, select: publicUser });
   if (body.avatarUrl !== undefined && before.avatarUrl !== user.avatarUrl) await removeAvatarFile(before.avatarUrl);
   res.json({ user });
+});
+
+const myTasksQuery = z.object({
+  status: z.enum(['open', 'done', 'all']).default('open'),
+  overdue: z
+    .enum(['true', 'false', '1', '0'])
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+usersRouter.get('/me/tasks', async (req, res) => {
+  const filter = myTasksQuery.parse(req.query);
+  res.json(await listMyTasks(currentUserId(req), filter));
 });
 
 const avatarUpload = multer({
@@ -45,7 +60,6 @@ function readAvatar(req: Request, res: Response) {
   });
 }
 
-// multipart/form-data, trường "avatar": png, jpg, gif hoặc webp, tối đa 2MB
 usersRouter.post('/me/avatar', async (req, res) => {
   const file = await readAvatar(req, res);
   if (!file) throw badRequest('Chưa chọn ảnh');
