@@ -103,14 +103,15 @@ describe('Công việc', () => {
 
     await Promise.all(
       ids.map((id, i) =>
-        (i % 2 ? a : b).agent
-          .post(`${base}/tasks/${id}/move`)
-          .send({ toColumnId: columns[i % 3].id, toIndex: i % 2 }),
+        (i % 2 ? a : b).agent.post(`${base}/tasks/${id}/move`).send({ toColumnId: columns[i % 3].id, toIndex: i % 2 }),
       ),
     );
 
     const cols = await boardOrder(a.agent, base);
-    const all = cols.flat().map((t: { id: string }) => t.id).sort();
+    const all = cols
+      .flat()
+      .map((t: { id: string }) => t.id)
+      .sort();
     expect(all).toEqual([...ids].sort());
     for (const tasks of cols) {
       expect(tasks.map((t: { position: number }) => t.position)).toEqual(tasks.map((_: unknown, i: number) => i));

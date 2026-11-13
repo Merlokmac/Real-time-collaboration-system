@@ -1,8 +1,10 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
+import type { Request, Response } from 'express';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import { Pool } from 'pg';
 import { env, isProd } from '../config/env';
+import '../types';
 
 export const pgPool = new Pool({ connectionString: env.DATABASE_URL, max: 5 });
 
@@ -31,10 +33,12 @@ export const sessionMiddleware = session({
  */
 export function getSessionUserId(req: IncomingMessage): Promise<string | null> {
   return new Promise((resolve) => {
-    const res = new ServerResponse(req);
-    sessionMiddleware(req as any, res as any, (err?: unknown) => {
+    // express-session chỉ cần các trường có sẵn trên request/response gốc của Node
+    const expressReq = req as Request;
+    const res = new ServerResponse(req) as Response;
+    sessionMiddleware(expressReq, res, (err?: unknown) => {
       if (err) return resolve(null);
-      resolve((req as any).session?.userId ?? null);
+      resolve(expressReq.session?.userId ?? null);
     });
   });
 }

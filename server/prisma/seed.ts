@@ -7,9 +7,7 @@ const PASSWORD = 'matkhau123';
 const days = (n: number) => new Date(Date.now() + n * 24 * 60 * 60 * 1000);
 
 async function main() {
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE users, projects, user_sessions RESTART IDENTITY CASCADE',
-  );
+  await prisma.$executeRawUnsafe('TRUNCATE users, projects, user_sessions RESTART IDENTITY CASCADE');
 
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
   const [huan, bao, toan] = await Promise.all(

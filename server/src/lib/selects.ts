@@ -6,4 +6,3 @@ export const publicUser = {
   email: true,
   avatarUrl: true,
 } satisfies Prisma.UserSelect;
-

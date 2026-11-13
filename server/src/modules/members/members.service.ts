@@ -5,6 +5,7 @@ import type { Ctx } from '../../middlewares/auth';
 import { realtime } from '../../realtime/bridge';
 import { ServerEvents } from '../../realtime/events';
 import { logActivity, publishActivity } from '../activity/activity.service';
+import { formatTask, taskInclude } from '../tasks/tasks.format';
 
 export function listMembers(projectId: string) {
   return prisma.projectMember.findMany({
@@ -16,7 +17,7 @@ export function listMembers(projectId: string) {
 
 // Dùng chung cho xóa thành viên và tự rời dự án
 async function detachMember(ctx: Ctx, projectId: string, userId: string, action: 'member.removed' | 'member.left') {
-  const { log, user, unassignedTaskIds } = await prisma.$transaction(async (tx) => {
+  const { log, user, unassignedTasks } = await prisma.$transaction(async (tx) => {
     const member = await tx.projectMember.findUnique({
       where: { projectId_userId: { projectId, userId } },
       include: { user: { select: publicUser } },
@@ -44,11 +45,17 @@ async function detachMember(ctx: Ctx, projectId: string, userId: string, action:
       entityId: userId,
       meta: { name: member.user.name, unassignedTaskIds: unassigned.map((t) => t.id) },
     });
-    return { log, user: member.user, unassignedTaskIds: unassigned.map((t) => t.id) };
+    const unassignedTasks = unassigned.length
+      ? await tx.task.findMany({ where: { id: { in: unassigned.map((t) => t.id) } }, include: taskInclude })
+      : [];
+    return { log, user: member.user, unassignedTasks: unassignedTasks.map((t) => formatTask(t)) };
   });
 
+  const unassignedTaskIds = unassignedTasks.map((t) => t.id);
   realtime.revokeAccess(projectId, userId);
   realtime.toProject(projectId, ServerEvents.memberRemoved, { projectId, userId, user, unassignedTaskIds });
+  // Version của các thẻ này đã tăng, phát lại để bản nháp cũ ở client không ghi đè người phụ trách
+  for (const task of unassignedTasks) realtime.toProject(projectId, ServerEvents.taskUpdated, task);
   publishActivity(log);
 }
 

@@ -82,8 +82,7 @@ async function loadOwnComment(ctx: Ctx, projectId: string, taskId: string, comme
   if (!comment) throw notFound('Không tìm thấy bình luận');
   if (comment.authorId !== ctx.userId) {
     const isOwner =
-      allowOwner &&
-      (await prisma.projectMember.count({ where: { projectId, userId: ctx.userId, role: 'OWNER' } })) > 0;
+      allowOwner && (await prisma.projectMember.count({ where: { projectId, userId: ctx.userId, role: 'OWNER' } })) > 0;
     if (!isOwner) throw forbidden('Bạn chỉ được thao tác với bình luận của mình');
   }
   return comment;
