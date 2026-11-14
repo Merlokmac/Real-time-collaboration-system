@@ -1,12 +1,9 @@
 import type { Server as HttpServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
+import { setupWSConnection, setPersistence } from 'y-websocket/bin/utils';
 
 import { getSessionUserId } from '../lib/session';
 import { authorizeDocument, yjsPersistence } from '../collab';
-
-// y-websocket 1.5.4 chưa có type declaration tốt cho server utils
-
-import { setupWSConnection, setPersistence } from 'y-websocket/bin/utils';
 
 type YjsConnection = {
   ws: WebSocket;
@@ -36,17 +33,17 @@ export function attachYjs(server: HttpServer) {
   setPersistence(yjsPersistence);
 
   server.on('upgrade', async (request, socket, head) => {
-    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
-
-    // Không phải Yjs thì để Socket.IO xử lý
-    if (!url.pathname.startsWith('/yjs/')) {
-      return;
-    }
-
-    const docName = decodeURIComponent(url.pathname.slice('/yjs/'.length));
-
     try {
-      // 1. Kiểm tra đã login chưa
+      const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
+
+      // Không phải Yjs thì để Socket.IO xử lý
+      if (!url.pathname.startsWith('/yjs/')) {
+        return;
+      }
+
+      const docName = decodeURIComponent(url.pathname.slice('/yjs/'.length));
+
+      // Kiểm tra người dùng đã đăng nhập chưa
       const userId = await getSessionUserId(request);
 
       if (!userId) {
@@ -55,7 +52,7 @@ export function attachYjs(server: HttpServer) {
         return;
       }
 
-      // 2. Kiểm tra user có quyền mở task không
+      // Kiểm tra quyền truy cập tài liệu
       const access = await authorizeDocument(userId, docName);
 
       if (!access) {
@@ -63,8 +60,6 @@ export function attachYjs(server: HttpServer) {
         socket.destroy();
         return;
       }
-
-      // 3. Upgrade thành WebSocket
 
       // Upgrade và theo dõi kết nối Yjs
       wss.handleUpgrade(request, socket, head, (ws) => {
@@ -76,37 +71,41 @@ export function attachYjs(server: HttpServer) {
 
         connections.add(connection);
 
+        // Dọn thông tin khi WebSocket đóng
         ws.on('close', () => {
           connections.delete(connection);
         });
 
-        // Kiểm tra lại quyền để tránh kết nối trong lúc bị kick
-        void (async () => {
-          try {
-            const currentAccess = await authorizeDocument(userId, docName);
+        try {
+          // Thiết lập Yjs ngay để không bỏ lỡ gói sync đầu tiên
+          setupWSConnection(ws, request, { docName });
 
-            if (!currentAccess || currentAccess.projectId !== access.projectId) {
+          // Kiểm tra lại quyền sau khi thiết lập kết nối
+          void authorizeDocument(userId, docName)
+            .then((currentAccess) => {
+              if (!currentAccess || currentAccess.projectId !== access.projectId) {
+                ws.terminate();
+                return;
+              }
+
+              if (ws.readyState === WebSocket.OPEN) {
+                console.log('Yjs connected:', {
+                  userId,
+                  docName,
+                });
+              }
+            })
+            .catch((error) => {
+              console.error('Yjs connection error:', error);
               ws.terminate();
-              return;
-            }
-
-            if (ws.readyState !== WebSocket.OPEN) return;
-
-            console.log('Yjs connected:', {
-              userId,
-              docName,
             });
-
-            setupWSConnection(ws, request, { docName });
-          } catch (error) {
-            console.error('Yjs connection error:', error);
-            ws.terminate();
-          }
-        })();
+        } catch (error) {
+          console.error('Yjs setup error:', error);
+          ws.terminate();
+        }
       });
     } catch (error) {
       console.error('Yjs upgrade error:', error);
-
       socket.destroy();
     }
   });

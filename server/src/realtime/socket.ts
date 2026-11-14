@@ -51,7 +51,6 @@ export function attachSocketIO(server: HttpServer) {
   // Phát danh sách user đang online trong project
   async function broadcastPresence(projectId: string) {
     const room = projectRoom(projectId);
-
     const sockets = await io.in(room).fetchSockets();
 
     const users = new Map<string, string>();
@@ -88,54 +87,72 @@ export function attachSocketIO(server: HttpServer) {
     socket.join(userRoom(userId));
 
     // Join project room sau khi kiểm tra quyền thành viên
-    socket.on('project:join', async (projectId: string) => {
-      const membership = await prisma.projectMember.findUnique({
-        where: {
-          projectId_userId: {
-            projectId,
-            userId,
-          },
-        },
-      });
-
-      if (!membership) {
-        console.log(`User ${userId} không có quyền vào project ${projectId}`);
-
+    socket.on('project:join', async (projectId: unknown) => {
+      if (typeof projectId !== 'string' || !projectId.trim()) {
         return;
       }
 
-      await socket.join(projectRoom(projectId));
+      try {
+        const membership = await prisma.projectMember.findUnique({
+          where: {
+            projectId_userId: {
+              projectId,
+              userId,
+            },
+          },
+        });
 
-      joinedProjects.add(projectId);
+        if (!membership || !socket.connected) {
+          return;
+        }
 
-      console.log(`Socket ${socket.id} joined ${projectRoom(projectId)}`);
+        await socket.join(projectRoom(projectId));
 
-      await broadcastPresence(projectId);
+        joinedProjects.add(projectId);
+
+        console.log(`Socket ${socket.id} joined ${projectRoom(projectId)}`);
+
+        await broadcastPresence(projectId);
+      } catch (error) {
+        console.error('Project join error:', error);
+      }
     });
 
     // Rời project room và cập nhật presence
-    socket.on('project:leave', async (projectId: string) => {
-      socket.to(projectRoom(projectId)).emit('chat:typing', {
-        projectId,
-        userId,
-        name: userName,
-        typing: false,
-      });
+    socket.on('project:leave', async (projectId: unknown) => {
+      if (typeof projectId !== 'string' || !projectId.trim()) {
+        return;
+      }
 
-      await socket.leave(projectRoom(projectId));
+      try {
+        const room = projectRoom(projectId);
 
-      joinedProjects.delete(projectId);
+        if (!socket.rooms.has(room)) return;
 
-      await broadcastPresence(projectId);
+        socket.to(room).emit('chat:typing', {
+          projectId,
+          userId,
+          name: userName,
+          typing: false,
+        });
 
-      console.log(`Socket ${socket.id} left ${projectRoom(projectId)}`);
+        await socket.leave(room);
+
+        joinedProjects.delete(projectId);
+
+        await broadcastPresence(projectId);
+
+        console.log(`Socket ${socket.id} left ${room}`);
+      } catch (error) {
+        console.error('Project leave error:', error);
+      }
     });
 
     // Phát trạng thái đang nhập cho những user khác
     socket.on('chat:typing', (payload: { projectId?: string; typing?: boolean }) => {
       const projectId = payload?.projectId;
 
-      if (!projectId || typeof payload.typing !== 'boolean') {
+      if (typeof projectId !== 'string' || !projectId.trim() || typeof payload?.typing !== 'boolean') {
         return;
       }
 
@@ -156,6 +173,10 @@ export function attachSocketIO(server: HttpServer) {
     // Báo ngừng typing trước khi socket disconnect
     socket.on('disconnecting', () => {
       for (const projectId of joinedProjects) {
+        if (!socket.rooms.has(projectRoom(projectId))) {
+          continue;
+        }
+
         socket.to(projectRoom(projectId)).emit('chat:typing', {
           projectId,
           userId,
@@ -174,8 +195,12 @@ export function attachSocketIO(server: HttpServer) {
       });
 
       for (const projectId of joinedProjects) {
-        void broadcastPresence(projectId);
+        void broadcastPresence(projectId).catch((error) => {
+          console.error('Broadcast presence error:', error);
+        });
       }
+
+      joinedProjects.clear();
     });
   });
 
@@ -186,7 +211,6 @@ export function attachSocketIO(server: HttpServer) {
 
       if (exceptSocketId) {
         room.except(exceptSocketId).emit(event, payload);
-
         return;
       }
 
@@ -198,21 +222,33 @@ export function attachSocketIO(server: HttpServer) {
     },
 
     revokeAccess(projectId, userId) {
-      // Báo cho user bị kick biết đã mất quyền
-      io.to(userRoom(userId)).emit('project:access_revoked', { projectId });
-
       // Thu hồi quyền nhận realtime của project
       io.in(userRoom(userId)).socketsLeave(projectRoom(projectId));
 
       // Đóng các WebSocket Yjs của thành viên bị kick
       revokeYjsConnections(projectId, userId);
 
+      // Xóa trạng thái typing của thành viên bị kick
+      io.to(projectRoom(projectId)).emit('chat:typing', {
+        projectId,
+        userId,
+        typing: false,
+      });
+
+      // Báo cho user bị kick biết đã mất quyền
+      io.to(userRoom(userId)).emit('project:access_revoked', {
+        projectId,
+      });
+
       // Cập nhật danh sách online
-      void broadcastPresence(projectId);
+      void broadcastPresence(projectId).catch((error) => {
+        console.error('Broadcast presence error:', error);
+      });
     },
 
     closeProject(projectId) {
       io.in(projectRoom(projectId)).socketsLeave(projectRoom(projectId));
+
       // Đóng toàn bộ kết nối Yjs của project
       revokeYjsConnections(projectId);
     },
