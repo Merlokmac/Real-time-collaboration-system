@@ -52,9 +52,7 @@ export function attachSocketIO(server: HttpServer) {
   async function broadcastPresence(projectId: string) {
     const room = projectRoom(projectId);
 
-    const sockets = await io
-      .in(room)
-      .fetchSockets();
+    const sockets = await io.in(room).fetchSockets();
 
     const users = new Map<string, string>();
 
@@ -101,9 +99,7 @@ export function attachSocketIO(server: HttpServer) {
       });
 
       if (!membership) {
-        console.log(
-          `User ${userId} không có quyền vào project ${projectId}`,
-        );
+        console.log(`User ${userId} không có quyền vào project ${projectId}`);
 
         return;
       }
@@ -112,23 +108,19 @@ export function attachSocketIO(server: HttpServer) {
 
       joinedProjects.add(projectId);
 
-      console.log(
-        `Socket ${socket.id} joined ${projectRoom(projectId)}`,
-      );
+      console.log(`Socket ${socket.id} joined ${projectRoom(projectId)}`);
 
       await broadcastPresence(projectId);
     });
 
     // Rời project room và cập nhật presence
     socket.on('project:leave', async (projectId: string) => {
-      socket
-        .to(projectRoom(projectId))
-        .emit('chat:typing', {
-          projectId,
-          userId,
-          name: userName,
-          typing: false,
-        });
+      socket.to(projectRoom(projectId)).emit('chat:typing', {
+        projectId,
+        userId,
+        name: userName,
+        typing: false,
+      });
 
       await socket.leave(projectRoom(projectId));
 
@@ -136,55 +128,40 @@ export function attachSocketIO(server: HttpServer) {
 
       await broadcastPresence(projectId);
 
-      console.log(
-        `Socket ${socket.id} left ${projectRoom(projectId)}`,
-      );
+      console.log(`Socket ${socket.id} left ${projectRoom(projectId)}`);
     });
 
     // Phát trạng thái đang nhập cho những user khác
-    socket.on(
-      'chat:typing',
-      (payload: {
-        projectId?: string;
-        typing?: boolean;
-      }) => {
-        const projectId = payload?.projectId;
+    socket.on('chat:typing', (payload: { projectId?: string; typing?: boolean }) => {
+      const projectId = payload?.projectId;
 
-        if (
-          !projectId ||
-          typeof payload.typing !== 'boolean'
-        ) {
-          return;
-        }
+      if (!projectId || typeof payload.typing !== 'boolean') {
+        return;
+      }
 
-        const room = projectRoom(projectId);
+      const room = projectRoom(projectId);
 
-        if (!socket.rooms.has(room)) {
-          return;
-        }
+      if (!socket.rooms.has(room)) {
+        return;
+      }
 
-        socket
-          .to(room)
-          .emit('chat:typing', {
-            projectId,
-            userId,
-            name: userName,
-            typing: payload.typing,
-          });
-      },
-    );
+      socket.to(room).emit('chat:typing', {
+        projectId,
+        userId,
+        name: userName,
+        typing: payload.typing,
+      });
+    });
 
     // Báo ngừng typing trước khi socket disconnect
     socket.on('disconnecting', () => {
       for (const projectId of joinedProjects) {
-        socket
-          .to(projectRoom(projectId))
-          .emit('chat:typing', {
-            projectId,
-            userId,
-            name: userName,
-            typing: false,
-          });
+        socket.to(projectRoom(projectId)).emit('chat:typing', {
+          projectId,
+          userId,
+          name: userName,
+          typing: false,
+        });
       }
     });
 
@@ -204,18 +181,11 @@ export function attachSocketIO(server: HttpServer) {
 
   // Nối REST API với Socket.IO
   setRealtimeBridge({
-    toProject(
-      projectId,
-      event,
-      payload,
-      exceptSocketId,
-    ) {
+    toProject(projectId, event, payload, exceptSocketId) {
       const room = io.to(projectRoom(projectId));
 
       if (exceptSocketId) {
-        room
-          .except(exceptSocketId)
-          .emit(event, payload);
+        room.except(exceptSocketId).emit(event, payload);
 
         return;
       }
@@ -223,29 +193,16 @@ export function attachSocketIO(server: HttpServer) {
       room.emit(event, payload);
     },
 
-    toUser(
-      userId,
-      event,
-      payload,
-    ) {
-      io.to(userRoom(userId)).emit(
-        event,
-        payload,
-      );
+    toUser(userId, event, payload) {
+      io.to(userRoom(userId)).emit(event, payload);
     },
 
-    
     revokeAccess(projectId, userId) {
       // Báo cho user bị kick biết đã mất quyền
-      io.to(userRoom(userId)).emit(
-        'project:access_revoked',
-        { projectId },
-      );
+      io.to(userRoom(userId)).emit('project:access_revoked', { projectId });
 
       // Thu hồi quyền nhận realtime của project
-      io.in(userRoom(userId)).socketsLeave(
-        projectRoom(projectId),
-      );
+      io.in(userRoom(userId)).socketsLeave(projectRoom(projectId));
 
       // Đóng các WebSocket Yjs của thành viên bị kick
       revokeYjsConnections(projectId, userId);
@@ -254,11 +211,8 @@ export function attachSocketIO(server: HttpServer) {
       void broadcastPresence(projectId);
     },
 
-
     closeProject(projectId) {
-      io.in(projectRoom(projectId)).socketsLeave(
-        projectRoom(projectId),
-      );
+      io.in(projectRoom(projectId)).socketsLeave(projectRoom(projectId));
       // Đóng toàn bộ kết nối Yjs của project
       revokeYjsConnections(projectId);
     },
