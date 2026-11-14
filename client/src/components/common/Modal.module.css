@@ -20,6 +20,10 @@
   box-shadow: var(--shadow-lg);
 }
 
+.large {
+  max-width: 720px;
+}
+
 .dialog:focus {
   outline: none;
   box-shadow: var(--shadow-lg);

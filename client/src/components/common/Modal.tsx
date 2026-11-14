@@ -20,6 +20,8 @@ interface ModalProps {
   children: ReactNode;
   /** Các nút ở chân hộp thoại (Hủy, Lưu...) */
   footer?: ReactNode;
+  /** 'md' (mặc định, 520px) cho form ngắn; 'lg' (720px) cho nội dung dài như chi tiết thẻ */
+  size?: 'md' | 'lg';
 }
 
 const FOCUSABLE =
@@ -28,7 +30,7 @@ const FOCUSABLE =
 // Đếm số modal đang mở, để modal lồng nhau không mở khóa cuộn quá sớm
 let openCount = 0;
 
-export function Modal({ title, onClose, children, footer }: ModalProps) {
+export function Modal({ title, onClose, children, footer, size = 'md' }: ModalProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   // Phải lưu ngay lúc render đầu: tới khi effect chạy thì autoFocus của ô nhập bên trong đã lấy mất focus
@@ -96,7 +98,7 @@ export function Modal({ title, onClose, children, footer }: ModalProps) {
     <div className={styles.backdrop} onMouseDown={handleBackdropMouseDown} onClick={handleBackdropClick}>
       <div
         ref={dialogRef}
-        className={styles.dialog}
+        className={`${styles.dialog} ${size === 'lg' ? styles.large : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
