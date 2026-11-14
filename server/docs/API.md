@@ -117,6 +117,20 @@ Một task trả về có dạng:
 
 **Mô tả công việc** không sửa qua API này mà sửa qua Yjs. `descriptionText` chỉ để hiển thị trên thẻ.
 
+## Checklist trong thẻ
+
+Mỗi thẻ có danh sách mục việc cần làm (tối đa 50 mục), mọi thành viên đều thêm, sửa, tick được. Mục không có `version` riêng nên không bị 409 như sửa thẻ.
+
+| Method | Path                                                        | Body                             | Trả về                             |
+| ------ | ----------------------------------------------------------- | -------------------------------- | ---------------------------------- |
+| GET    | `/projects/:projectId/tasks/:taskId/checklist`              |                                  | `{ items, total, done }`           |
+| POST   | `/projects/:projectId/tasks/:taskId/checklist`              | `{ content }` (tối đa 200 ký tự) | 201 `{ item, items, total, done }` |
+| PATCH  | `/projects/:projectId/tasks/:taskId/checklist/:itemId`      | `{ content?, isDone? }`          | `{ item, items, total, done }`     |
+| POST   | `/projects/:projectId/tasks/:taskId/checklist/:itemId/move` | `{ toIndex }`                    | `{ items, total, done }`           |
+| DELETE | `/projects/:projectId/tasks/:taskId/checklist/:itemId`      |                                  | `{ items, total, done }`           |
+
+Mục có dạng `{ id, taskId, content, isDone, position, createdAt, updatedAt }`, `items` luôn theo thứ tự `position`. Sau mỗi thay đổi server phát `checklist:updated` với `{ taskId, items }` (cả danh sách), client thay hẳn danh sách của thẻ đó. Tick/bỏ tick và thêm mục được ghi vào lịch sử của thẻ (`checklist.added`, `checklist.checked`, `checklist.unchecked`).
+
 ## Nhãn
 
 | Method | Path                                   | Body                                                                        |
