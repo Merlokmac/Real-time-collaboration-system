@@ -131,6 +131,7 @@ model Task {
   createdBy User             @relation("TaskCreator", fields: [createdById], references: [id])
   labels    TaskLabel[]
   comments  Comment[]
+  checklist ChecklistItem[]
   document  TaskDocument?
   updates   DocumentUpdate[]
 
@@ -164,6 +165,21 @@ model TaskLabel {
   @@id([taskId, labelId])
   @@index([labelId])
   @@map("task_labels")
+}
+
+model ChecklistItem {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  content   String
+  isDone    Boolean  @default(false) @map("is_done")
+  position  Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, position])
+  @@map("checklist_items")
 }
 
 model Comment {
