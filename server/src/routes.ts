@@ -11,6 +11,7 @@ import { columnsRouter } from './modules/columns/columns.routes';
 import { tasksRouter } from './modules/tasks/tasks.routes';
 import { labelsRouter } from './modules/labels/labels.routes';
 import { commentsRouter } from './modules/comments/comments.routes';
+import { checklistRouter } from './modules/checklist/checklist.routes';
 import { messagesRouter } from './modules/messages/messages.routes';
 import { activityRouter } from './modules/activity/activity.routes';
 
@@ -30,6 +31,7 @@ project.use('/invitations', projectInvitationsRouter);
 project.use('/board', boardRouter);
 project.use('/columns', columnsRouter);
 project.use('/tasks/:taskId/comments', commentsRouter);
+project.use('/tasks/:taskId/checklist', checklistRouter);
 project.use('/tasks', tasksRouter);
 project.use('/labels', labelsRouter);
 project.use('/messages', messagesRouter);
