@@ -107,6 +107,55 @@
 }
 
 /* Thông báo lỗi kéo thả: nổi ở giữa đáy màn hình, không đẩy bảng */
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* Bảng bên trái, khung chat bên phải (khi mở) */
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.boardArea {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat {
+  position: relative;
+  flex: none;
+  width: 360px;
+  padding: 0 var(--space-4) var(--space-4);
+  overflow-y: auto;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.chat[hidden] {
+  display: none;
+}
+
+.chatClose {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  font-size: 24px;
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+
 .toast {
   position: fixed;
   bottom: var(--space-4);
@@ -149,6 +198,25 @@
 
   .title {
     font-size: var(--font-size-lg);
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  /* Điện thoại: khung chat phủ toàn màn hình, có nút đóng */
+  .chat {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    width: auto;
+    padding-top: var(--space-10);
+    border-left: 0;
+  }
+
+  .chatClose {
+    display: grid;
+    place-items: center;
   }
 
   .message {

@@ -110,6 +110,18 @@ export interface ColumnTaskOrder {
   taskIds: string[];
 }
 
+// ---------- Chat ----------
+
+export interface Message {
+  id: string;
+  projectId: string;
+  authorId: string;
+  author: User;
+  content: string;
+  clientId: string | null;
+  createdAt: IsoDateString;
+}
+
 // ---------- Bình luận ----------
 
 export interface Comment {
@@ -122,6 +134,7 @@ export interface Comment {
   editedAt: IsoDateString | null;
   createdAt: IsoDateString;
 }
+
 
 /** Danh sách phân trang cursor: mới nhất trước, nextCursor = null là hết */
 export interface Paginated<T> {

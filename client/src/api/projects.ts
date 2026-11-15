@@ -1,6 +1,6 @@
 // API dự án: /projects và /projects/:projectId. Mỗi hàm bỏ lớp { items } / { project } bọc ngoài.
-import type { Project, ProjectSummary } from '../types';
 import { api } from './client';
+import type { Board, Project, ProjectSummary } from '../types';
 
 export interface CreateProjectInput {
   /** 1–100 ký tự */
@@ -47,4 +47,14 @@ export async function updateProject(projectId: string, input: UpdateProjectInput
 /** Chỉ chủ dự án. `confirmName` phải trùng đúng tên dự án, nếu không server trả 400. */
 export function removeProject(projectId: string, confirmName: string): Promise<void> {
   return api.delete(`/projects/${projectId}`, { confirmName });
+}
+
+export async function getBoard(
+  projectId: string,
+  options?: { signal?: AbortSignal },
+): Promise<Board> {
+  return api.get<Board>(
+    `/projects/${projectId}/board`,
+    options,
+  );
 }

@@ -9,18 +9,23 @@
  *   - có dữ liệu → tiêu đề dự án + bảng
  *   - kéo thả thất bại → thẻ/cột đã được useBoard đưa về chỗ cũ; trang hiện thông báo lỗi nổi ở dưới
  *   - URL có ?task=<id> → mở chi tiết thẻ đó (TaskDetail)
+ *   - realtime (useBoardRealtime): thay đổi của người khác hiện ngay; bị xóa khỏi dự án → về Dự án của tôi
+ *   - khung chat bên phải (ChatPanel của Người 3), mời thành viên (chỉ chủ dự án)
  *
  * Không dùng PageContainer: bảng phải chiếm hết chiều ngang và chiều cao còn lại để cuộn ngang.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError, getErrorMessage } from '../api/client';
 import { Board } from '../components/board/Board';
+import { ChatPanel } from '../components/chat/ChatPanel';
 import { Button } from '../components/common/Button';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { Spinner } from '../components/common/Spinner';
+import { InviteMemberDialog } from '../components/invitations/InviteMemberDialog';
 import { TaskDetail } from '../components/task/TaskDetail';
 import { useBoard } from '../hooks/useBoard';
+import { useBoardRealtime } from '../hooks/useBoardRealtime';
 import type { Task } from '../types';
 import { findTask } from '../utils/boardState';
 import styles from './BoardPage.module.css';
@@ -34,6 +39,7 @@ export function BoardPage() {
     error,
     loading,
     reload,
+    applyUpdate,
     createColumn,
     renameColumn,
     setColumnDone,
@@ -48,7 +54,19 @@ export function BoardPage() {
     savingTaskIds,
     savingColumnIds,
   } = useBoard(projectId);
+  const navigate = useNavigate();
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [inviting, setInviting] = useState(false);
+
+  useBoardRealtime({
+    projectId,
+    ready: board !== null,
+    applyUpdate,
+    reload,
+    // Bị chủ dự án xóa khỏi dự án trong lúc đang xem
+    onAccessRevoked: () => navigate('/projects', { replace: true }),
+  });
 
   // Thông báo lỗi kéo thả tự ẩn sau 6 giây (vẫn có nút đóng)
   useEffect(() => {
@@ -157,21 +175,45 @@ export function BoardPage() {
         <h1 className={styles.title}>{project.name}</h1>
         <span className={`${styles.role} ${isOwner ? styles.owner : ''}`}>{isOwner ? 'Chủ dự án' : 'Thành viên'}</span>
         {loading && <Spinner size="sm" label="Đang tải lại" />}
+        <div className={styles.actions}>
+          {isOwner && (
+            <Button variant="secondary" onClick={() => setInviting(true)}>
+              Mời thành viên
+            </Button>
+          )}
+          <Button variant={chatOpen ? 'primary' : 'secondary'} onClick={() => setChatOpen((v) => !v)} aria-expanded={chatOpen}>
+            Trò chuyện
+          </Button>
+        </div>
       </div>
 
-      <Board
-        board={board}
-        savingTaskIds={savingTaskIds}
-        savingColumnIds={savingColumnIds}
-        onMoveTask={handleMoveTask}
-        onMoveColumn={handleMoveColumn}
-        onCreateColumn={createColumn}
-        onRename={renameColumn}
-        onSetDone={setColumnDone}
-        onDelete={deleteColumn}
-        onCreateTask={createTask}
-        onOpenTask={openTask}
-      />
+      <div className={styles.body}>
+        <div className={styles.boardArea}>
+          <Board
+            board={board}
+            savingTaskIds={savingTaskIds}
+            savingColumnIds={savingColumnIds}
+            onMoveTask={handleMoveTask}
+            onMoveColumn={handleMoveColumn}
+            onCreateColumn={createColumn}
+            onRename={renameColumn}
+            onSetDone={setColumnDone}
+            onDelete={deleteColumn}
+            onCreateTask={createTask}
+            onOpenTask={openTask}
+          />
+        </div>
+
+        {/* Luôn mount (chỉ ẩn đi) để không lỡ tin nhắn và danh sách online khi khung đang đóng */}
+        <aside className={styles.chat} hidden={!chatOpen} aria-label="Trò chuyện dự án">
+          <button type="button" className={styles.chatClose} onClick={() => setChatOpen(false)} aria-label="Đóng khung trò chuyện">
+            ×
+          </button>
+          <ChatPanel projectId={projectId} />
+        </aside>
+      </div>
+
+      {inviting && <InviteMemberDialog projectId={projectId} onClose={() => setInviting(false)} />}
 
       {openTaskId && (
         <TaskDetail
