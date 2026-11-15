@@ -106,6 +106,27 @@ export function upsertTask(board: Board, task: Task): Board {
 }
 
 /**
+ * Cập nhật NỘI DUNG thẻ (tiêu đề, người làm, hạn, nhãn, mô tả, version) từ một bản đọc riêng lẻ:
+ * GET /tasks/:id khi mở chi tiết, hoặc `details.current` của lỗi 409.
+ *
+ * Khác upsertTask ở chỗ giữ nguyên vị trí (columnId, position) đang có trên bảng: kéo thẻ không tăng version,
+ * nên một bản đọc trả về chậm (cùng version) có thể mang cột CŨ và kéo thẻ về chỗ cũ nếu áp cả vị trí.
+ * Bản có version nhỏ hơn bản đang có thì bỏ qua (dữ liệu cũ hơn).
+ * Thẻ không có trên bảng (đã bị xóa, hoặc đang lọc) thì không thêm vào.
+ */
+export function refreshTaskContent(board: Board, task: Task): Board {
+  const current = findTask(board, task.id);
+  if (!current || task.version < current.version) return board;
+  const column = board.columns.find((c) => c.id === current.columnId);
+  if (!column) return board;
+  const merged = withOverdue({ ...task, columnId: current.columnId, position: current.position }, column);
+  return mapColumn(board, current.columnId, (col) => ({
+    ...col,
+    tasks: col.tasks.map((t) => (t.id === task.id ? merged : t)),
+  }));
+}
+
+/**
  * Xóa thẻ (DELETE /tasks/:id, sự kiện task:deleted). Nếu có `order` (columnId + taskIds từ sự kiện)
  * thì sắp lại cột đó theo thứ tự server.
  */

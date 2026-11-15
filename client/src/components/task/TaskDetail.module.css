@@ -25,66 +25,55 @@
   color: var(--color-text-muted);
 }
 
-/* Hai cột: nhãn trường | giá trị. Điện thoại: xếp chồng */
-.fields {
-  display: grid;
-  grid-template-columns: 140px 1fr;
-  gap: var(--space-3) var(--space-4);
+.columnRow {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: var(--space-3);
 }
 
-.fields dt {
+.columnLabel {
   font-size: var(--font-size-sm);
+  font-weight: 600;
   color: var(--color-text-muted);
 }
 
-.fields dd {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
+.select {
+  min-width: 180px;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
 }
 
-.person {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+.select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
 }
 
-.muted {
-  color: var(--color-text-subtle);
-}
-
-.doneBadge,
 .overdueBadge {
   padding: 2px var(--space-2);
   border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-}
-
-.doneBadge {
-  background: var(--color-success-soft);
-  color: var(--color-success);
-}
-
-.overdueBadge {
   background: var(--color-danger-soft);
   color: var(--color-danger-text);
-}
-
-.labels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.label {
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   font-weight: 600;
+}
+
+.hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.notice {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  font-size: var(--font-size-sm);
 }
 
 .section {
@@ -102,13 +91,31 @@
   color: var(--color-text-muted);
 }
 
+/* Chân hộp thoại: "Xóa" bên trái, các nút còn lại bên phải */
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.delete {
+  margin-right: auto;
+  color: var(--color-danger);
+}
+
 @media (max-width: 640px) {
-  .fields {
-    grid-template-columns: 1fr;
-    gap: var(--space-1);
+  .select {
+    flex: 1;
   }
 
-  .fields dd {
-    margin-bottom: var(--space-2);
+  .delete {
+    flex-basis: 100%;
+    margin-right: 0;
+  }
+
+  /* Các nút còn lại chia đều hàng dưới, dễ bấm bằng ngón tay */
+  .footer > :not(.delete) {
+    flex: 1;
   }
 }

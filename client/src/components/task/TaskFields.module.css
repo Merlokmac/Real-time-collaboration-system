@@ -1,0 +1,131 @@
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.label {
+  padding: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
+}
+
+.input:disabled {
+  background: var(--color-surface-muted);
+}
+
+.invalid {
+  border-color: var(--color-danger);
+}
+
+.error {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger-text);
+}
+
+.hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.inline {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.clear {
+  flex: none;
+  width: var(--control-height);
+  border-radius: var(--radius-md);
+  font-size: 20px;
+  color: var(--color-text-muted);
+}
+
+.clear:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.labelChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.labelChip:has(input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+
+/* Ô tick thật vẫn nằm trong nhãn (đọc màn hình, bàn phím), chỉ ẩn khỏi mắt */
+.labelChip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checked {
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+}
+
+.checked .swatch {
+  outline: 2px solid currentColor;
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}

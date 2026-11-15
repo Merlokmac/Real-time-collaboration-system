@@ -19,13 +19,15 @@ import { getBoard } from '../api/board';
 import * as columnsApi from '../api/columns';
 import { getProject } from '../api/projects';
 import * as tasksApi from '../api/tasks';
-import type { Board, ColumnTaskOrder, Project } from '../types';
+import type { Board, ColumnTaskOrder, Project, Task } from '../types';
 import {
   addColumn,
   applyTaskOrder,
   findTask,
   moveTaskLocal,
+  refreshTaskContent,
   removeColumn,
+  removeTask,
   reorderColumns,
   updateColumn,
   upsertTask,
@@ -117,6 +119,40 @@ export function useBoard(projectId: string) {
     [projectId, applyUpdate],
   );
 
+  /**
+   * Sửa thẻ (chi tiết thẻ). `input.version` là version của bản người dùng bắt đầu sửa.
+   * 409 VERSION_CONFLICT được ném nguyên cho chi tiết thẻ xử lý (giữ bản nháp, cho người dùng chọn).
+   */
+  const updateTask = useCallback(
+    async (taskId: string, input: tasksApi.UpdateTaskInput) => {
+      const task = await tasksApi.updateTask(projectId, taskId, input);
+      // refreshTaskContent (không phải upsertTask): giữ vị trí đang có trên bảng, vì thẻ có thể đang được chuyển cột
+      // và kết quả PATCH mang cột cũ; cũng không thêm thẻ vào bảng nếu bảng không có nó (đang lọc)
+      applyUpdate((b) => refreshTaskContent(b, task));
+      return task;
+    },
+    [projectId, applyUpdate],
+  );
+
+  const deleteTask = useCallback(
+    async (taskId: string) => {
+      try {
+        await tasksApi.deleteTask(projectId, taskId);
+      } catch (err) {
+        // 404: thẻ đã bị người khác xóa trước → coi như xong
+        if (!(err instanceof ApiError && err.code === 'NOT_FOUND')) throw err;
+      }
+      applyUpdate((b) => removeTask(b, taskId));
+    },
+    [projectId, applyUpdate],
+  );
+
+  /** Áp bản thẻ đọc riêng (GET /tasks/:id, bản mới nhất trong lỗi 409) lên bảng; xem refreshTaskContent. */
+  const refreshTask = useCallback((task: Task) => applyUpdate((b) => refreshTaskContent(b, task)), [applyUpdate]);
+
+  /** Bỏ thẻ khỏi bảng khi biết chắc nó không còn trên server (GET /tasks/:id trả 404). */
+  const forgetTask = useCallback((taskId: string) => applyUpdate((b) => removeTask(b, taskId)), [applyUpdate]);
+
   // ---------- Kéo thả: cập nhật tạm trước, server quyết định sau ----------
 
   const board = current?.board ?? null;
@@ -156,10 +192,13 @@ export function useBoard(projectId: string) {
       setSavingTaskIds((s) => new Set(s).add(taskId));
       try {
         const result = await tasksApi.moveTask(projectId, taskId, toColumnId, toIndex);
-        applyUpdate((b) => applyTaskOrder(b, result.columns, result.task));
+        // Vị trí theo server; nội dung thẻ chỉ lấy khi không cũ hơn bản đang có (trong lúc chờ có thể vừa lưu
+        // chỉnh sửa ở chi tiết thẻ, version đã tăng — không để kết quả move ghi đè)
+        applyUpdate((b) => refreshTaskContent(applyTaskOrder(b, result.columns), result.task));
       } catch (err) {
-        // `task` là bản cũ (columnId, isOverdue cũ) nên đưa thẻ về y như trước khi kéo
-        applyUpdate((b) => applyTaskOrder(b, previous, task));
+        // Chỉ hoàn lại VỊ TRÍ (thứ tự hai cột; columnId, isOverdue tính lại theo cột). Không đưa nội dung thẻ về
+        // bản chụp lúc kéo, vì trong lúc chờ thẻ có thể đã được lưu chỉnh sửa (version mới hơn).
+        applyUpdate((b) => applyTaskOrder(b, previous));
         throw err;
       } finally {
         setSavingTaskIds((s) => {
@@ -215,6 +254,10 @@ export function useBoard(projectId: string) {
     setColumnDone,
     deleteColumn,
     createTask,
+    updateTask,
+    deleteTask,
+    refreshTask,
+    forgetTask,
     moveTask,
     moveColumn,
     savingTaskIds,

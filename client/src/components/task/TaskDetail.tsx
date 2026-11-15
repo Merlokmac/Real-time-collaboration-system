@@ -1,160 +1,357 @@
 /*
  * Chi tiết một thẻ, mở dạng hộp thoại (toàn màn hình trên điện thoại).
  *
- * Dữ liệu:
- *   - Hiện ngay bản thẻ đang có trên bảng (`initialTask`) để không phải chờ.
- *   - Đồng thời gọi GET /tasks/:taskId lấy bản mới nhất (version, mô tả có thể đã đổi từ lúc tải bảng).
- *     Đổi thẻ hoặc đóng hộp thoại giữa chừng thì hủy request (AbortController).
- *   - 404: thẻ đã bị xóa (hoặc mình không còn trong dự án) → báo và chỉ cho đóng.
+ * Nguồn dữ liệu:
+ *   - Thẻ trên bảng (`task`, do useBoard giữ) là bản chính về VỊ TRÍ (cột), để chuyển cột, kéo thả, sau này là
+ *     realtime hiện ngay ở đây.
+ *   - `latest`: bản mới nhất đọc riêng (GET /tasks/:taskId khi mở, kết quả lưu, bản trong lỗi 409). Cũng được áp lên
+ *     bảng (`onRefresh`). Hiển thị bản có version lớn hơn giữa hai nguồn, nên thẻ không có trên bảng vẫn sửa được.
+ *   - GET trả 404 → thẻ đã bị xóa: báo, và bỏ thẻ khỏi bảng (`onGone`). Lỗi khác → báo kèm nút Thử lại.
  *
- * Sửa thẻ, xung đột version, chuyển cột, xóa thẻ và bình luận được thêm ở các bước sau.
+ * Sửa thẻ (xem useTaskDraft):
+ *   - Sửa trường nào thì bản nháp ghi lại `base` (bản lúc bắt đầu sửa). Lưu = PATCH với `base.version`
+ *     và chỉ các trường đã đổi.
+ *   - 409 VERSION_CONFLICT: giữ bản nháp, áp bản mới nhất (`error.details.current`), hiện bảng so sánh.
+ *     Người dùng chọn "Dùng bản mới" hoặc "Gửi lại bản của tôi" (gửi lại với version mới). Không ghi đè âm thầm.
+ *   - Đóng khi còn thay đổi chưa lưu → hỏi lại.
+ *
+ * Chuyển cột: chọn cột rồi bấm "Chuyển" (không gọi API ngay khi đổi ô chọn, vì phím ↑/↓ có thể đổi giá trị ngoài ý
+ * muốn). Thẻ xuống cuối cột đích, dùng cùng moveTask với kéo thả (cần cho điện thoại và bàn phím).
+ * Chuyển cột không đổi version nên không ảnh hưởng bản nháp.
+ *
+ * Chỉ render MỘT <Modal> ở cùng vị trí cho mọi trạng thái (đang tải, lỗi, không tìm thấy, đã tải), để hộp thoại
+ * không bị dựng lại khi tải xong (giữ focus và chỗ trả focus khi đóng).
  */
-import { useEffect, useState } from 'react';
-import { ApiError, getErrorMessage } from '../../api/client';
-import { getTask } from '../../api/tasks';
-import type { Column, Task } from '../../types';
-import { textColorOn } from '../../utils/color';
-import { formatDate, formatDateTime } from '../../utils/format';
-import { Avatar } from '../common/Avatar';
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
+import { ApiError, getErrorMessage, getFieldErrors } from '../../api/client';
+import { listMembers } from '../../api/members';
+import { getTask, type UpdateTaskInput } from '../../api/tasks';
+import { changesBetween, useTaskDraft, type TaskChanges, type TaskDraft } from '../../hooks/useTaskDraft';
+import type { BoardColumn, Label, ProjectMember, Task } from '../../types';
+import { formatDateTime } from '../../utils/format';
+import { validateTaskTitle } from '../../utils/validation';
 import { Button } from '../common/Button';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { Modal } from '../common/Modal';
 import { Spinner } from '../common/Spinner';
 import { TaskDescriptionEditor } from './TaskDescriptionEditor';
+import { TaskFields } from './TaskFields';
+import { VersionConflict } from './VersionConflict';
 import styles from './TaskDetail.module.css';
 
 interface TaskDetailProps {
   projectId: string;
   taskId: string;
-  /** Bản thẻ đang có trên bảng, hiển thị trong lúc tải bản mới nhất */
-  initialTask?: Task;
-  /** Các cột của bảng, để hiện tên cột chứa thẻ */
-  columns: Column[];
+  /** Thẻ trên bảng; undefined nếu bảng không có thẻ này */
+  task?: Task;
+  columns: BoardColumn[];
+  /** Nhãn của dự án */
+  labels: Label[];
+  /** Áp bản thẻ đọc riêng lên bảng (GET /tasks/:id, bản mới nhất trong lỗi 409) */
+  onRefresh: (task: Task) => void;
+  /** Thẻ không còn trên server (404): bỏ khỏi bảng */
+  onGone: (taskId: string) => void;
+  onSave: (taskId: string, input: UpdateTaskInput) => Promise<Task>;
+  onMove: (taskId: string, toColumnId: string, toIndex: number) => Promise<void>;
+  onDelete: (taskId: string) => Promise<void>;
   onClose: () => void;
 }
 
-type Loaded =
-  | { key: string; task: Task; error?: undefined }
-  | { key: string; task?: undefined; error: unknown };
+type LoadState = { key: string; error: unknown | null };
+type MembersState = { key: string; items: ProjectMember[] | null };
 
-export function TaskDetail({ projectId, taskId, initialTask, columns, onClose }: TaskDetailProps) {
+/**
+ * Bản để hiển thị: nội dung lấy từ bản có version lớn hơn, vị trí (cột) luôn lấy từ bảng nếu bảng có thẻ.
+ * Kéo/chuyển cột không tăng version nên bản đọc riêng có thể mang cột cũ.
+ */
+function pickShown(onBoard: Task | undefined, latest: Task | undefined): Task | undefined {
+  if (!onBoard || !latest) return onBoard ?? latest;
+  if (latest.version <= onBoard.version) return onBoard;
+  return { ...latest, columnId: onBoard.columnId, position: onBoard.position, isOverdue: onBoard.isOverdue };
+}
+
+export function TaskDetail({
+  projectId,
+  taskId,
+  task: boardTask,
+  columns,
+  labels,
+  onRefresh,
+  onGone,
+  onSave,
+  onMove,
+  onDelete,
+  onClose,
+}: TaskDetailProps) {
+  const formId = useId();
+
+  // ---------- Bản mới nhất ----------
+  // TaskDetail được key theo taskId ở trang bảng, nên state này luôn thuộc đúng một thẻ
+  const [latest, setLatest] = useState<Task | undefined>();
   const [reloadKey, setReloadKey] = useState(0);
-  const [data, setData] = useState<Loaded | null>(null);
-  const requestKey = `${taskId}#${reloadKey}`;
+  const [load, setLoad] = useState<LoadState | null>(null);
+  const requestKey = String(reloadKey);
 
   useEffect(() => {
     const controller = new AbortController();
     getTask(projectId, taskId, { signal: controller.signal })
-      .then((task) => setData({ key: requestKey, task }))
+      .then((task) => {
+        setLatest((prev) => (prev && prev.version > task.version ? prev : task));
+        setLoad({ key: requestKey, error: null });
+        onRefresh(task);
+      })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        setData({ key: requestKey, error: err });
+        setLoad({ key: requestKey, error: err });
+        if (err instanceof ApiError && err.code === 'NOT_FOUND') onGone(taskId);
       });
     return () => controller.abort();
-  }, [projectId, taskId, requestKey]);
+  }, [projectId, taskId, requestKey, onRefresh, onGone]);
 
-  // Cùng cách với useBoard: "đang tải" suy ra từ việc dữ liệu thuộc request nào
-  const loading = data?.key !== requestKey;
-  const current = data && data.key.startsWith(`${taskId}#`) ? data : null;
-  const task = current?.task ?? (initialTask?.id === taskId ? initialTask : undefined);
-  const error = loading ? null : (current?.error ?? null);
-  const retry = () => setReloadKey((k) => k + 1);
+  const loading = load?.key !== requestKey;
+  const loadError = loading ? null : (load?.error ?? null);
+  const notFound = loadError instanceof ApiError && loadError.code === 'NOT_FOUND';
+  const task = notFound ? undefined : pickShown(boardTask, latest);
 
-  if (error instanceof ApiError && error.code === 'NOT_FOUND') {
-    return (
-      <Modal title="Không tìm thấy công việc" onClose={onClose} footer={<Button onClick={onClose}>Đóng</Button>}>
-        <p>Công việc không còn tồn tại hoặc bạn không còn quyền xem.</p>
-      </Modal>
-    );
+  /** Ghi nhận một bản mới hơn (kết quả lưu, bản trong lỗi 409) cho cả hộp thoại lẫn bảng. */
+  function acceptLatest(next: Task) {
+    setLatest((prev) => (prev && prev.version > next.version ? prev : next));
+    onRefresh(next);
   }
 
-  if (!task) {
-    return (
-      <Modal title="Chi tiết công việc" onClose={onClose} size="lg">
-        {error ? (
-          <div className={styles.status}>
-            <ErrorMessage>Không tải được công việc. {getErrorMessage(error)}</ErrorMessage>
-            <Button variant="secondary" onClick={retry}>
-              Thử lại
+  // ---------- Thành viên (để chọn người phụ trách) ----------
+  const [membersState, setMembersState] = useState<MembersState | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    listMembers(projectId, { signal: controller.signal })
+      .then((items) => setMembersState({ key: projectId, items }))
+      .catch(() => {
+        // Không tải được thì ô chọn chỉ còn "Chưa giao" và người đang được giao; vẫn sửa được các trường khác
+        if (!controller.signal.aborted) setMembersState({ key: projectId, items: [] });
+      });
+    return () => controller.abort();
+  }, [projectId]);
+  const members = membersState?.key === projectId ? membersState.items : null;
+
+  // ---------- Sửa thẻ ----------
+  const draft = useTaskDraft(task);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | undefined>();
+  // Bản mới nhất trên server khi lưu bị 409; null = không có xung đột
+  const [conflict, setConflict] = useState<Task | null>(null);
+
+  async function save(version: number, changes: TaskChanges) {
+    if (!task) return;
+    if (Object.keys(changes).length === 0) {
+      draft.reset();
+      setConflict(null);
+      return;
+    }
+    const error = changes.title !== undefined ? validateTaskTitle(changes.title) : undefined;
+    setTitleError(error);
+    if (error) return;
+
+    setSaving(true);
+    setFormError(null);
+    try {
+      acceptLatest(await onSave(task.id, { version, ...changes }));
+      draft.reset();
+      setConflict(null);
+    } catch (err) {
+      const current = err instanceof ApiError && err.code === 'VERSION_CONFLICT' ? conflictTask(err) : null;
+      if (current) {
+        setConflict(current);
+        acceptLatest(current);
+      } else {
+        setTitleError(getFieldErrors(err).title);
+        setFormError(getErrorMessage(err));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (draft.base) void save(draft.base.version, draft.changes);
+  }
+
+  function discardChanges() {
+    draft.reset();
+    setConflict(null);
+    setFormError(null);
+    setTitleError(undefined);
+  }
+
+  // Khi xung đột: các trường MÌNH đã sửa mà vẫn còn khác bản mới nhất. Dùng cho cả bảng so sánh lẫn "Gửi lại".
+  // Không so cả bản nháp với bản mới nhất: các trường mình không đụng tới vẫn mang giá trị cũ, gửi lên sẽ ghi đè
+  // mất thay đổi của người khác.
+  const pending = conflict && draft.values ? pendingChanges(draft.values, draft.changes, conflict) : {};
+
+  function resubmit() {
+    if (conflict) void save(conflict.version, pending);
+  }
+
+  // ---------- Chuyển cột, xóa, đóng ----------
+  const [targetColumnId, setTargetColumnId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<'delete' | 'close' | null>(null);
+  const selectedColumnId = targetColumnId ?? task?.columnId ?? '';
+
+  async function handleMove() {
+    if (!task || selectedColumnId === task.columnId) return;
+    const target = columns.find((c) => c.id === selectedColumnId);
+    if (!target) return;
+    setMoving(true);
+    setMoveError(null);
+    try {
+      // Xuống cuối cột đích; toIndex tính khi đã bỏ thẻ khỏi cột cũ (giống kéo thả)
+      await onMove(task.id, target.id, target.tasks.filter((t) => t.id !== task.id).length);
+      setTargetColumnId(null);
+    } catch (err) {
+      setMoveError(`Không chuyển được cột. ${getErrorMessage(err)}`);
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  function requestClose() {
+    if (saving) return;
+    if (draft.dirty) setConfirming('close');
+    else onClose();
+  }
+
+  // ---------- Nội dung hộp thoại theo trạng thái ----------
+
+  let title: string;
+  let body: ReactNode;
+  let footer: ReactNode;
+
+  if (notFound) {
+    title = 'Không tìm thấy công việc';
+    body = <p>Công việc không còn tồn tại hoặc bạn không còn quyền xem.</p>;
+    footer = <Button onClick={onClose}>Đóng</Button>;
+  } else if (!task || !draft.values) {
+    title = 'Chi tiết công việc';
+    body = loadError ? (
+      <div className={styles.status}>
+        <ErrorMessage>Không tải được công việc. {getErrorMessage(loadError)}</ErrorMessage>
+        <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
+          Thử lại
+        </Button>
+      </div>
+    ) : (
+      <div className={styles.center}>
+        <Spinner size="lg" label="Đang tải công việc" />
+      </div>
+    );
+  } else {
+    title = task.title;
+    const changedElsewhere = draft.base && draft.base.version !== task.version && !conflict;
+    const canMove = boardTask !== undefined;
+
+    footer = (
+      <div className={styles.footer}>
+        <Button variant="ghost" className={styles.delete} onClick={() => setConfirming('delete')} disabled={saving}>
+          Xóa công việc
+        </Button>
+        {draft.dirty && !conflict ? (
+          <>
+            <Button variant="secondary" onClick={discardChanges} disabled={saving}>
+              Hủy thay đổi
             </Button>
-          </div>
+            <Button type="submit" form={formId} loading={saving}>
+              Lưu
+            </Button>
+          </>
         ) : (
-          <div className={styles.center}>
-            <Spinner size="lg" label="Đang tải công việc" />
-          </div>
+          <Button variant="secondary" onClick={requestClose}>
+            Đóng
+          </Button>
         )}
-      </Modal>
+      </div>
     );
-  }
 
-  const column = columns.find((c) => c.id === task.columnId);
-
-  return (
-    <Modal title={task.title} onClose={onClose} size="lg">
+    body = (
       <div className={styles.content}>
         {loading && (
           <p className={styles.syncing} role="status">
             <Spinner size="sm" /> Đang tải bản mới nhất…
           </p>
         )}
-        {error !== null && (
+        {loadError !== null && (
           <div className={styles.status}>
-            <ErrorMessage>Không tải được bản mới nhất. {getErrorMessage(error)}</ErrorMessage>
-            <Button variant="secondary" onClick={retry}>
+            <ErrorMessage>Không tải được bản mới nhất. {getErrorMessage(loadError)}</ErrorMessage>
+            <Button variant="secondary" onClick={() => setReloadKey((k) => k + 1)}>
               Thử lại
             </Button>
           </div>
         )}
 
-        <dl className={styles.fields}>
-          <dt>Cột</dt>
-          <dd>
-            {column ? column.name : '—'}
-            {column?.isDone && <span className={styles.doneBadge}>✓ Hoàn thành</span>}
-          </dd>
+        <div className={styles.columnRow}>
+          <label htmlFor={`${formId}-column`} className={styles.columnLabel}>
+            Cột
+          </label>
+          <select
+            id={`${formId}-column`}
+            className={styles.select}
+            value={selectedColumnId}
+            disabled={moving || !canMove}
+            onChange={(e) => setTargetColumnId(e.target.value)}
+          >
+            {columns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.isDone ? ' (hoàn thành)' : ''}
+              </option>
+            ))}
+          </select>
+          {selectedColumnId !== task.columnId && (
+            <Button variant="secondary" onClick={() => void handleMove()} loading={moving}>
+              Chuyển
+            </Button>
+          )}
+          {task.isOverdue && <span className={styles.overdueBadge}>Quá hạn</span>}
+        </div>
+        {!canMove && <p className={styles.hint}>Thẻ chưa có trên bảng đang hiển thị. Tải lại bảng để chuyển cột.</p>}
+        {moveError && <ErrorMessage>{moveError}</ErrorMessage>}
 
-          <dt>Người phụ trách</dt>
-          <dd>
-            {task.assignee ? (
-              <span className={styles.person}>
-                <Avatar name={task.assignee.name} id={task.assignee.id} src={task.assignee.avatarUrl} size="sm" />
-                {task.assignee.name}
-              </span>
-            ) : (
-              <span className={styles.muted}>Chưa giao</span>
-            )}
-          </dd>
+        {conflict && (
+          <VersionConflict
+            current={conflict}
+            draft={draft.values}
+            changes={pending}
+            members={members}
+            labels={labels}
+            submitting={saving}
+            onUseLatest={discardChanges}
+            onResubmit={resubmit}
+          />
+        )}
+        {changedElsewhere && (
+          <p className={styles.notice} role="status">
+            Công việc vừa được cập nhật ở nơi khác. Khi lưu, bạn sẽ được chọn giữ bản nào.
+          </p>
+        )}
 
-          <dt>Hạn hoàn thành</dt>
-          <dd>
-            {task.dueDate ? (
-              <>
-                <time dateTime={task.dueDate}>{formatDate(task.dueDate)}</time>
-                {task.isOverdue && <span className={styles.overdueBadge}>Quá hạn</span>}
-              </>
-            ) : (
-              <span className={styles.muted}>Không có hạn</span>
-            )}
-          </dd>
+        <form id={formId} onSubmit={handleSubmit} noValidate>
+          <TaskFields
+            values={draft.values}
+            members={members}
+            currentAssignee={task.assignee}
+            labels={labels}
+            titleError={titleError}
+            disabled={saving || conflict !== null}
+            onChange={draft.setField}
+          />
+        </form>
+        {formError && <ErrorMessage>{formError}</ErrorMessage>}
 
-          <dt>Nhãn</dt>
-          <dd>
-            {task.labels.length > 0 ? (
-              <ul className={styles.labels}>
-                {task.labels.map((label) => (
-                  <li key={label.id} className={styles.label} style={{ background: label.color, color: textColorOn(label.color) }}>
-                    {label.name}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <span className={styles.muted}>Không có nhãn</span>
-            )}
-          </dd>
-        </dl>
-
-        <section className={styles.section} aria-labelledby="task-description-heading">
-          <h3 id="task-description-heading" className={styles.sectionTitle}>
+        <section className={styles.section} aria-labelledby={`${formId}-description`}>
+          <h3 id={`${formId}-description`} className={styles.sectionTitle}>
             Mô tả
           </h3>
           <TaskDescriptionEditor taskId={task.id} descriptionText={task.descriptionText} />
@@ -164,6 +361,56 @@ export function TaskDetail({ projectId, taskId, initialTask, columns, onClose }:
           Tạo lúc {formatDateTime(task.createdAt)} · Cập nhật lúc {formatDateTime(task.updatedAt)}
         </p>
       </div>
-    </Modal>
+    );
+  }
+
+  return (
+    <>
+      <Modal title={title} onClose={task ? requestClose : onClose} size="lg" footer={footer}>
+        {body}
+      </Modal>
+
+      {task && confirming === 'delete' && (
+        <ConfirmDialog
+          title="Xóa công việc?"
+          confirmLabel="Xóa"
+          danger
+          onCancel={() => setConfirming(null)}
+          onConfirm={async () => {
+            await onDelete(task.id);
+            onClose();
+          }}
+        >
+          Công việc <strong>{task.title}</strong> cùng bình luận của nó sẽ bị xóa vĩnh viễn.
+        </ConfirmDialog>
+      )}
+      {confirming === 'close' && (
+        <ConfirmDialog
+          title="Bỏ thay đổi chưa lưu?"
+          confirmLabel="Bỏ thay đổi"
+          danger
+          onCancel={() => setConfirming(null)}
+          onConfirm={async () => onClose()}
+        >
+          Các thay đổi bạn vừa sửa sẽ bị mất.
+        </ConfirmDialog>
+      )}
+    </>
   );
+}
+
+/** Bản mới nhất server gửi kèm lỗi 409 (`error.details.current`). */
+function conflictTask(err: ApiError): Task | null {
+  const details = err.details as { current?: Task } | null | undefined;
+  return details?.current ?? null;
+}
+
+/** Trong `mine` (các trường mình đã sửa), giữ những trường vẫn còn khác `latest`, với giá trị của bản nháp. */
+function pendingChanges(draft: TaskDraft, mine: TaskChanges, latest: Task): TaskChanges {
+  const differsFromLatest = changesBetween(draft, latest);
+  const result: TaskChanges = {};
+  for (const key of Object.keys(mine) as (keyof TaskChanges)[]) {
+    if (key in differsFromLatest) Object.assign(result, { [key]: differsFromLatest[key] });
+  }
+  return result;
 }
