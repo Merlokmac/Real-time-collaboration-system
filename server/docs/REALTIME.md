@@ -56,6 +56,7 @@ Khi một socket xin vào phòng dự án, phải kiểm tra membership (bảng 
 | `label:deleted`                       | `{ labelId }`                                      |
 | `comment:created` / `comment:updated` | comment (có `taskId`)                              |
 | `comment:deleted`                     | `{ taskId, commentId }`                            |
+| `checklist:updated`                   | `{ taskId, items }` (cả danh sách mục của thẻ)     |
 | `message:created`                     | message                                            |
 | `activity:created`                    | log hoạt động                                      |
 

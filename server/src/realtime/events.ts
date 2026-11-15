@@ -28,6 +28,8 @@ export const ServerEvents = {
   commentUpdated: 'comment:updated',
   commentDeleted: 'comment:deleted',
 
+  checklistUpdated: 'checklist:updated',
+
   messageCreated: 'message:created',
   activityCreated: 'activity:created',
 } as const;
