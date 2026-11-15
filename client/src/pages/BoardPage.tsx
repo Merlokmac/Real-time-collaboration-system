@@ -8,18 +8,21 @@
  *   - lỗi khác (mất mạng, lỗi server) → thông báo + nút Thử lại
  *   - có dữ liệu → tiêu đề dự án + bảng
  *   - kéo thả thất bại → thẻ/cột đã được useBoard đưa về chỗ cũ; trang hiện thông báo lỗi nổi ở dưới
+ *   - URL có ?task=<id> → mở chi tiết thẻ đó (TaskDetail)
  *
  * Không dùng PageContainer: bảng phải chiếm hết chiều ngang và chiều cao còn lại để cuộn ngang.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError, getErrorMessage } from '../api/client';
 import { Board } from '../components/board/Board';
 import { Button } from '../components/common/Button';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { Spinner } from '../components/common/Spinner';
+import { TaskDetail } from '../components/task/TaskDetail';
 import { useBoard } from '../hooks/useBoard';
 import type { Task } from '../types';
+import { findTask } from '../utils/boardState';
 import styles from './BoardPage.module.css';
 
 export function BoardPage() {
@@ -36,6 +39,10 @@ export function BoardPage() {
     setColumnDone,
     deleteColumn,
     createTask,
+    updateTask,
+    deleteTask,
+    refreshTask,
+    forgetTask,
     moveTask,
     moveColumn,
     savingTaskIds,
@@ -75,10 +82,35 @@ export function BoardPage() {
     [moveColumn, handleMoveError],
   );
 
-  // Tuần 5 sẽ mở chi tiết thẻ
-  const openTask = useCallback((task: Task) => {
-    console.log('Mở thẻ', task.id, task);
-  }, []);
+  // Thẻ đang mở lưu trên URL (?task=<id>) để tải lại trang hoặc gửi đường dẫn vẫn mở đúng thẻ.
+  // Dùng replace để nút Back của trình duyệt không phải lùi qua từng lần mở/đóng thẻ.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openTaskId = searchParams.get('task');
+
+  const openTask = useCallback(
+    (task: Task) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('task', task.id);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const closeTask = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('task');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   if (error instanceof ApiError && error.code === 'NOT_FOUND') {
     return (
@@ -140,6 +172,24 @@ export function BoardPage() {
         onCreateTask={createTask}
         onOpenTask={openTask}
       />
+
+      {openTaskId && (
+        <TaskDetail
+          // key: đổi sang thẻ khác thì dựng lại từ đầu (bỏ bản nháp, trạng thái tải của thẻ cũ)
+          key={openTaskId}
+          projectId={projectId}
+          taskId={openTaskId}
+          task={findTask(board, openTaskId)}
+          columns={board.columns}
+          labels={board.labels}
+          onRefresh={refreshTask}
+          onGone={forgetTask}
+          onSave={updateTask}
+          onMove={moveTask}
+          onDelete={deleteTask}
+          onClose={closeTask}
+        />
+      )}
 
       {moveError && (
         <div className={styles.toast} role="alert">
