@@ -8,15 +8,38 @@
  *   - task:created / task:updated / task:moved / task:deleted → upsertTask / refreshTaskContent / applyTaskOrder /
  *     removeTask. Các hàm này idempotent, nên nhận lại sự kiện của chính thao tác mình (task:moved luôn được gửi
  *     cho cả người kéo) cũng không sai.
- *   - project:access_revoked (bị xóa khỏi dự án) → gọi `onAccessRevoked` để trang đưa về Dự án của tôi.
+ *   - column:created / column:updated / column:reordered / column:deleted → addColumn / updateColumn /
+ *     reorderColumns / removeColumn (cũng idempotent).
+ *   - project:access_revoked (bị xóa khỏi dự án) hoặc project:deleted → gọi `onAccessRevoked` để trang đưa về
+ *     Dự án của tôi. (member:removed của chính mình đã đi kèm project:access_revoked từ server.)
  *
- * Sự kiện cột, nhãn, dự án, thành viên được thêm ở Tuần 7.
+ * Sự kiện nhãn, sửa dự án, thành viên khác được thêm ở Tuần 7.
  */
 import { useEffect, useRef } from 'react';
 import { socket } from '../realtime/socket';
-import type { ColumnTaskOrder, Task } from '../types';
-import { applyTaskOrder, refreshTaskContent, removeTask, upsertTask } from '../utils/boardState';
+import type { Column, ColumnTaskOrder, Task } from '../types';
+import {
+  addColumn,
+  applyTaskOrder,
+  refreshTaskContent,
+  removeColumn,
+  removeTask,
+  reorderColumns,
+  updateColumn,
+  upsertTask,
+} from '../utils/boardState';
 import type { BoardUpdater } from './useBoard';
+
+interface ColumnsReorderedPayload {
+  projectId: string;
+  columnIds: string[];
+}
+
+interface ColumnDeletedPayload {
+  projectId: string;
+  columnId: string;
+  columnIds: string[];
+}
 
 interface TaskMovedPayload {
   task: Task;
@@ -69,17 +92,41 @@ export function useBoardRealtime({ projectId, ready, applyUpdate, reload, onAcce
     const onTaskDeleted = ({ taskId, columnId, taskIds }: TaskDeletedPayload) => {
       applyUpdate((b) => removeTask(b, taskId, { columnId, taskIds }));
     };
+    // Cột: các hàm boardState đều idempotent (column:reordered gửi cả cho người kéo)
+    const onColumnCreated = (column: Column) => {
+      if (column.projectId === projectId) applyUpdate((b) => addColumn(b, column));
+    };
+    const onColumnUpdated = (column: Column) => {
+      if (column.projectId === projectId) applyUpdate((b) => updateColumn(b, column));
+    };
+    const onColumnsReordered = (payload: ColumnsReorderedPayload) => {
+      if (payload.projectId === projectId) applyUpdate((b) => reorderColumns(b, payload.columnIds));
+    };
+    const onColumnDeleted = (payload: ColumnDeletedPayload) => {
+      if (payload.projectId === projectId) applyUpdate((b) => removeColumn(b, payload.columnId, payload.columnIds));
+    };
+    // Bị xóa khỏi dự án hoặc dự án bị xóa → không còn xem được bảng này nữa
     const onAccessRevoked = (payload: { projectId: string }) => {
       if (payload.projectId === projectId) onAccessRevokedRef.current();
     };
 
-    if (socket.connected) join();
+    if (socket.connected) {
+      join();
+      // Bảng được tải TRƯỚC khi vào phòng, nên sự kiện phát ra trong khoảng giữa hai việc đó bị lỡ.
+      // Tải lại một lần sau khi đã xin vào phòng để bù (nếu chưa kết nối thì handleReconnect sẽ làm việc này).
+      reload();
+    }
     socket.on('connect', handleReconnect);
     socket.on('task:created', onTaskCreated);
     socket.on('task:updated', onTaskUpdated);
     socket.on('task:moved', onTaskMoved);
     socket.on('task:deleted', onTaskDeleted);
+    socket.on('column:created', onColumnCreated);
+    socket.on('column:updated', onColumnUpdated);
+    socket.on('column:reordered', onColumnsReordered);
+    socket.on('column:deleted', onColumnDeleted);
     socket.on('project:access_revoked', onAccessRevoked);
+    socket.on('project:deleted', onAccessRevoked);
 
     return () => {
       socket.emit('project:leave', projectId);
@@ -88,7 +135,12 @@ export function useBoardRealtime({ projectId, ready, applyUpdate, reload, onAcce
       socket.off('task:updated', onTaskUpdated);
       socket.off('task:moved', onTaskMoved);
       socket.off('task:deleted', onTaskDeleted);
+      socket.off('column:created', onColumnCreated);
+      socket.off('column:updated', onColumnUpdated);
+      socket.off('column:reordered', onColumnsReordered);
+      socket.off('column:deleted', onColumnDeleted);
       socket.off('project:access_revoked', onAccessRevoked);
+      socket.off('project:deleted', onAccessRevoked);
     };
   }, [projectId, ready, applyUpdate, reload]);
 }
