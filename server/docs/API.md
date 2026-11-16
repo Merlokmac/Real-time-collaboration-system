@@ -76,18 +76,19 @@ Lời mời hết hạn sau 7 ngày.
 
 ## Bảng, cột, công việc (mọi thành viên)
 
-| Method | Path                                          | Body / Query                                            | Trả về                                                         |
-| ------ | --------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
-| GET    | `/projects/:projectId/board`                  | `?q=&assigneeId=<id hoặc none>&labelId=&overdue=true`   | `{ columns: [{ ...column, tasks: [...] }], labels, filtered }` |
-| POST   | `/projects/:projectId/columns`                | `{ name, isDone? }`                                     | 201 `{ column }`                                               |
-| PATCH  | `/projects/:projectId/columns/:columnId`      | `{ name?, isDone? }`                                    | `{ column }`                                                   |
-| POST   | `/projects/:projectId/columns/:columnId/move` | `{ toIndex }`                                           | `{ columnIds }`                                                |
-| DELETE | `/projects/:projectId/columns/:columnId`      |                                                         | 204, cột phải trống                                            |
-| POST   | `/projects/:projectId/tasks`                  | `{ columnId, title, assigneeId?, dueDate?, labelIds? }` | 201 `{ task }`                                                 |
-| GET    | `/projects/:projectId/tasks/:taskId`          |                                                         | `{ task }`                                                     |
-| PATCH  | `/projects/:projectId/tasks/:taskId`          | `{ version, title?, assigneeId?, dueDate?, labelIds? }` | `{ task }` hoặc 409                                            |
-| POST   | `/projects/:projectId/tasks/:taskId/move`     | `{ toColumnId, toIndex }`                               | `{ task, columns: [{ columnId, taskIds }] }`                   |
-| DELETE | `/projects/:projectId/tasks/:taskId`          |                                                         | 204                                                            |
+| Method | Path                                          | Body / Query                                            | Trả về                                                                                           |
+| ------ | --------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| GET    | `/projects/:projectId/board`                  | `?q=&assigneeId=<id hoặc none>&labelId=&overdue=true`   | `{ columns: [{ ...column, tasks: [...] }], labels, filtered }`                                   |
+| POST   | `/projects/:projectId/columns`                | `{ name, isDone? }`                                     | 201 `{ column }`                                                                                 |
+| PATCH  | `/projects/:projectId/columns/:columnId`      | `{ name?, isDone? }`                                    | `{ column }`                                                                                     |
+| POST   | `/projects/:projectId/columns/:columnId/move` | `{ toIndex }`                                           | `{ columnIds }`                                                                                  |
+| DELETE | `/projects/:projectId/columns/:columnId`      |                                                         | 204, cột phải trống                                                                              |
+| POST   | `/projects/:projectId/tasks`                  | `{ columnId, title, assigneeId?, dueDate?, labelIds? }` | 201 `{ task }`                                                                                   |
+| GET    | `/projects/:projectId/tasks/:taskId`          |                                                         | `{ task }`                                                                                       |
+| PATCH  | `/projects/:projectId/tasks/:taskId`          | `{ version, title?, assigneeId?, dueDate?, labelIds? }` | `{ task }` hoặc 409                                                                              |
+| POST   | `/projects/:projectId/tasks/:taskId/move`     | `{ toColumnId, toIndex }`                               | `{ task, columns: [{ columnId, taskIds }] }`                                                     |
+| DELETE | `/projects/:projectId/tasks/:taskId`          |                                                         | 204                                                                                              |
+| GET    | `/projects/:projectId/stats`                  |                                                         | `{ stats: { total, done, overdue, dueSoon, unassigned, completionRate, byColumn, byAssignee } }` |
 
 Một task trả về có dạng:
 
@@ -111,11 +112,27 @@ Một task trả về có dạng:
 }
 ```
 
+**Thống kê:** `dueSoon` là thẻ chưa xong có hạn trong 7 ngày tới, `completionRate` là phần trăm thẻ nằm trong cột hoàn thành (làm tròn). Số liệu tính lúc gọi, client gọi lại khi cần, không có sự kiện realtime riêng.
+
 **Sửa thẻ:** luôn gửi `version` đang có. Nếu nhận 409 `VERSION_CONFLICT`, `error.details.current` là bản mới nhất trên server; client giữ bản nháp, cho người dùng xem bản mới rồi gửi lại với version mới.
 
 **Kéo thẻ:** client có thể hiển thị tạm vị trí mới, nhưng phải lấy `columns` server trả về (hoặc sự kiện `task:moved`) làm chuẩn. Nếu lỗi thì hoàn lại vị trí cũ.
 
 **Mô tả công việc** không sửa qua API này mà sửa qua Yjs. `descriptionText` chỉ để hiển thị trên thẻ.
+
+## Checklist trong thẻ
+
+Mỗi thẻ có danh sách mục việc cần làm (tối đa 50 mục), mọi thành viên đều thêm, sửa, tick được. Mục không có `version` riêng nên không bị 409 như sửa thẻ.
+
+| Method | Path                                                        | Body                             | Trả về                             |
+| ------ | ----------------------------------------------------------- | -------------------------------- | ---------------------------------- |
+| GET    | `/projects/:projectId/tasks/:taskId/checklist`              |                                  | `{ items, total, done }`           |
+| POST   | `/projects/:projectId/tasks/:taskId/checklist`              | `{ content }` (tối đa 200 ký tự) | 201 `{ item, items, total, done }` |
+| PATCH  | `/projects/:projectId/tasks/:taskId/checklist/:itemId`      | `{ content?, isDone? }`          | `{ item, items, total, done }`     |
+| POST   | `/projects/:projectId/tasks/:taskId/checklist/:itemId/move` | `{ toIndex }`                    | `{ items, total, done }`           |
+| DELETE | `/projects/:projectId/tasks/:taskId/checklist/:itemId`      |                                  | `{ items, total, done }`           |
+
+Mục có dạng `{ id, taskId, content, isDone, position, createdAt, updatedAt }`, `items` luôn theo thứ tự `position`. Sau mỗi thay đổi server phát `checklist:updated` với `{ taskId, items }` (cả danh sách), client thay hẳn danh sách của thẻ đó. Tick/bỏ tick và thêm mục được ghi vào lịch sử của thẻ (`checklist.added`, `checklist.checked`, `checklist.unchecked`).
 
 ## Nhãn
 
