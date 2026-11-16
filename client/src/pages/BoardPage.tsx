@@ -209,7 +209,8 @@ export function BoardPage() {
           <button type="button" className={styles.chatClose} onClick={() => setChatOpen(false)} aria-label="Đóng khung trò chuyện">
             ×
           </button>
-          <ChatPanel projectId={projectId} />
+          {/* key theo dự án: đổi dự án là dựng lại khung chat, không còn tin nhắn / người online của dự án cũ */}
+          <ChatPanel key={projectId} projectId={projectId} />
         </aside>
       </div>
 
