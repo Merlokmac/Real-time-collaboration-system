@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../lib/prisma';
 import { publicUser } from '../../lib/selects';
-import { conflict, HttpError } from '../../lib/errors';
+import { conflict, HttpError, unauthorized } from '../../lib/errors';
 
 const SALT_ROUNDS = 10;
 
@@ -25,4 +25,29 @@ export async function login(input: { email: string; password: string }) {
 
 export function getUser(userId: string) {
   return prisma.user.findUnique({ where: { id: userId }, select: publicUser });
+}
+
+// Xóa mọi phiên đăng nhập khác của user (điện thoại, trình duyệt khác...), giữ lại phiên đang dùng
+export async function revokeOtherSessions(userId: string, currentSid: string) {
+  return prisma.$executeRaw`DELETE FROM user_sessions WHERE sess ->> 'userId' = ${userId} AND sid <> ${currentSid}`;
+}
+
+export async function changePassword(
+  userId: string,
+  currentSid: string,
+  input: { currentPassword: string; newPassword: string },
+) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw unauthorized();
+
+  const ok = await bcrypt.compare(input.currentPassword, user.passwordHash);
+  if (!ok) throw new HttpError(400, 'WRONG_PASSWORD', 'Mật khẩu hiện tại không đúng');
+  if (input.currentPassword === input.newPassword) {
+    throw new HttpError(400, 'SAME_PASSWORD', 'Mật khẩu mới phải khác mật khẩu hiện tại');
+  }
+
+  const passwordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
+  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+  // Đổi mật khẩu xong thì các thiết bị khác phải đăng nhập lại
+  return revokeOtherSessions(userId, currentSid);
 }
