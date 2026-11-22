@@ -1,0 +1,188 @@
+/* Thanh lọc nằm dưới thanh công cụ, cao theo nội dung (flex: none) nên không phá chiều cao vùng bảng */
+.bar {
+  flex: none;
+  padding: 0 var(--space-4) var(--space-2);
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+/* Nút "Lọc" chỉ có ở điện thoại */
+.toggle {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--font-size-xs);
+}
+
+.fields {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.search {
+  position: relative;
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.input,
+.select {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.input {
+  padding-right: var(--space-8);
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
+}
+
+.clearSearch {
+  position: absolute;
+  top: 50%;
+  right: var(--space-1);
+  width: 28px;
+  height: 28px;
+  transform: translateY(-50%);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.clearSearch:hover {
+  background: var(--color-surface-muted);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+}
+
+.label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.status {
+  min-height: 1.4em;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.errorActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .bar {
+    padding: 0 var(--space-3) var(--space-2);
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toggle {
+    display: inline-flex;
+    align-self: flex-start;
+  }
+
+  /* Thu gọn: các ô lọc ẩn cho tới khi bấm "Lọc" */
+  .fields {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fieldsOpen {
+    display: flex;
+  }
+
+  .search {
+    flex: none;
+    max-width: none;
+  }
+}
