@@ -23,6 +23,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '../api/client';
 import { getBoard, type BoardFilter } from '../api/board';
 import * as columnsApi from '../api/columns';
+import * as labelsApi from '../api/labels';
 import { getProject } from '../api/projects';
 import * as tasksApi from '../api/tasks';
 import type { Board, ColumnTaskOrder, Project, Task } from '../types';
@@ -33,9 +34,11 @@ import {
   moveTaskLocal,
   refreshTaskContent,
   removeColumn,
+  removeLabel,
   removeTask,
   reorderColumns,
   updateColumn,
+  upsertLabel,
   upsertTask,
 } from '../utils/boardState';
 import { filterKey, isFilterActive } from '../utils/boardFilter';
@@ -181,6 +184,42 @@ export function useBoard(projectId: string, filter: BoardFilter) {
         if (!(err instanceof ApiError && err.code === 'NOT_FOUND')) throw err;
       }
       applyUpdate((b) => removeColumn(b, columnId));
+    },
+    [projectId, applyUpdate],
+  );
+
+  // ---------- Nhãn (cấp dự án; mọi thành viên dùng được) ----------
+  // Như cột/thẻ: gọi API xong mới đổi state. Người thao tác KHÔNG nhận sự kiện label:* của chính mình (server loại
+  // trừ socket của họ) nên phải tự áp kết quả API; các hàm boardState idempotent nên nếu có nhận thêm cũng không sai.
+
+  /** Trả về nhãn mới để nơi gọi (chi tiết thẻ) tự gắn nó vào bản nháp. */
+  const createLabel = useCallback(
+    async (name: string, color: string) => {
+      const label = await labelsApi.createLabel(projectId, { name, color });
+      applyUpdate((b) => upsertLabel(b, label));
+      return label;
+    },
+    [projectId, applyUpdate],
+  );
+
+  const updateLabel = useCallback(
+    async (labelId: string, input: labelsApi.UpdateLabelInput) => {
+      const label = await labelsApi.updateLabel(projectId, labelId, input);
+      applyUpdate((b) => upsertLabel(b, label));
+      return label;
+    },
+    [projectId, applyUpdate],
+  );
+
+  const deleteLabel = useCallback(
+    async (labelId: string) => {
+      try {
+        await labelsApi.deleteLabel(projectId, labelId);
+      } catch (err) {
+        // 404: nhãn đã bị người khác xóa trước → coi như xong, bỏ khỏi bảng luôn
+        if (!(err instanceof ApiError && err.code === 'NOT_FOUND')) throw err;
+      }
+      applyUpdate((b) => removeLabel(b, labelId));
     },
     [projectId, applyUpdate],
   );
@@ -379,6 +418,9 @@ export function useBoard(projectId: string, filter: BoardFilter) {
     renameColumn,
     setColumnDone,
     deleteColumn,
+    createLabel,
+    updateLabel,
+    deleteLabel,
     createTask,
     updateTask,
     deleteTask,

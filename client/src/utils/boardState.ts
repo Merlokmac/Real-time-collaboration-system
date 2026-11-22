@@ -11,7 +11,7 @@
  * nhận phản hồi API vừa có thể nhận sự kiện socket của chính thao tác đó (task:moved, column:reordered
  * luôn được gửi cho cả người kéo). Ví dụ addColumn với cột đã có thì chỉ thay, không thêm bản thứ hai.
  */
-import type { Board, BoardColumn, Column, ColumnTaskOrder, Task } from '../types';
+import type { Board, BoardColumn, Column, ColumnTaskOrder, Label, Task } from '../types';
 
 // ---------- Tiện ích nội bộ ----------
 
@@ -37,6 +37,53 @@ function mapColumn(board: Board, columnId: string, fn: (column: BoardColumn) => 
     if (column.id !== columnId) return column;
     changed = true;
     return fn(column);
+  });
+  return changed ? { ...board, columns } : board;
+}
+
+/**
+ * Sắp nhãn theo tên (giống `orderBy name asc` của server). Lưu ý: localeCompare('vi') có thể khác collation của
+ * Postgres ở vài ký tự, nên sau khi tải lại thứ tự có thể nhảy nhẹ; chấp nhận được vì chỉ là thứ tự hiển thị.
+ */
+function sortLabels(labels: Label[]): Label[] {
+  return [...labels].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
+
+/**
+ * Chuẩn hóa bản sao nhãn nhúng trong một thẻ theo `board.labels` (nguồn chuẩn của nhãn).
+ *
+ * Vì sao cần: mỗi thẻ mang theo bản sao `task.labels`. Phản hồi HTTP của lần lưu thẻ của chính mình (không có sự kiện
+ * socket cho mình) có thể về SAU `label:updated` của người khác, mang tên/màu nhãn cũ; ghi thẳng vào bảng thì chip
+ * hiện lại nhãn cũ. Nên mỗi nhãn có trong `board.labels` thì thay bằng bản của bảng; nhãn chưa có (label:created
+ * có thể tới sau) thì giữ nguyên. Thứ tự `task.labels` từ server không được đảm bảo nên sắp theo tên một lần ở đây.
+ * Không có gì đổi thì trả nguyên `task`.
+ */
+function withBoardLabels(board: Board, task: Task): Task {
+  if (task.labels.length === 0) return task;
+  const byId = new Map(board.labels.map((l) => [l.id, l]));
+  const labels = sortLabels(task.labels.map((l) => byId.get(l.id) ?? l));
+  // So theo nội dung (id, tên, màu), không theo tham chiếu: bản của bảng và bản nhúng trong thẻ luôn là hai object
+  // khác nhau (parse JSON riêng), so tham chiếu thì lúc nào cũng "khác" và tạo thẻ mới vô ích.
+  const same =
+    labels.length === task.labels.length &&
+    labels.every((l, i) => l.id === task.labels[i].id && l.name === task.labels[i].name && l.color === task.labels[i].color);
+  return same ? task : { ...task, labels };
+}
+
+/** Áp `fn` lên `task.labels` của mọi thẻ; không thẻ nào đổi thì trả nguyên board. */
+function mapTaskLabels(board: Board, fn: (labels: Label[]) => Label[] | null): Board {
+  let changed = false;
+  const columns = board.columns.map((column) => {
+    let columnChanged = false;
+    const tasks = column.tasks.map((task) => {
+      const labels = fn(task.labels);
+      if (!labels) return task;
+      columnChanged = true;
+      return { ...task, labels };
+    });
+    if (!columnChanged) return column;
+    changed = true;
+    return { ...column, tasks };
   });
   return changed ? { ...board, columns } : board;
 }
@@ -93,7 +140,8 @@ export function reorderColumns(board: Board, columnIds: string[]): Board {
  *   - Thẻ chưa có → thêm vào cuối cột `task.columnId` (server luôn đặt thẻ mới ở cuối).
  *   - Thẻ có nhưng ở cột khác (hiếm, ví dụ sự kiện đến lệch thứ tự) → chuyển sang cuối cột mới.
  */
-export function upsertTask(board: Board, task: Task): Board {
+export function upsertTask(board: Board, rawTask: Task): Board {
+  const task = withBoardLabels(board, rawTask);
   const current = findTask(board, task.id);
   if (current && current.columnId === task.columnId) {
     return mapColumn(board, task.columnId, (column) => ({
@@ -114,9 +162,10 @@ export function upsertTask(board: Board, task: Task): Board {
  * Bản có version nhỏ hơn bản đang có thì bỏ qua (dữ liệu cũ hơn).
  * Thẻ không có trên bảng (đã bị xóa, hoặc đang lọc) thì không thêm vào.
  */
-export function refreshTaskContent(board: Board, task: Task): Board {
-  const current = findTask(board, task.id);
-  if (!current || task.version < current.version) return board;
+export function refreshTaskContent(board: Board, rawTask: Task): Board {
+  const current = findTask(board, rawTask.id);
+  if (!current || rawTask.version < current.version) return board;
+  const task = withBoardLabels(board, rawTask);
   const column = board.columns.find((c) => c.id === current.columnId);
   if (!column) return board;
   const merged = withOverdue({ ...task, columnId: current.columnId, position: current.position }, column);
@@ -196,4 +245,44 @@ export function applyTaskOrder(board: Board, orders: ColumnTaskOrder[], movedTas
       return { ...column, tasks };
     }),
   };
+}
+
+// ---------- Nhãn ----------
+
+/**
+ * Thêm hoặc cập nhật một nhãn (POST/PATCH /labels, sự kiện label:created / label:updated).
+ * Cập nhật cả `board.labels` lẫn bản sao nhúng trong `task.labels` của mọi thẻ đang dùng nhãn đó, vì server không
+ * phát task:updated khi chỉ đổi tên/màu nhãn. Idempotent; không có gì đổi thì trả nguyên board (tránh vẽ lại thừa).
+ */
+export function upsertLabel(board: Board, label: Label): Board {
+  const existing = board.labels.find((l) => l.id === label.id);
+  const unchanged =
+    existing !== undefined &&
+    existing.name === label.name &&
+    existing.color === label.color &&
+    existing.createdAt === label.createdAt;
+  const labels = unchanged
+    ? board.labels
+    : sortLabels(existing ? board.labels.map((l) => (l.id === label.id ? label : l)) : [...board.labels, label]);
+  const withLabels = labels === board.labels ? board : { ...board, labels };
+  return mapTaskLabels(withLabels, (taskLabels) => {
+    const index = taskLabels.findIndex((l) => l.id === label.id);
+    if (index < 0) return null;
+    const old = taskLabels[index];
+    if (old.name === label.name && old.color === label.color) return null;
+    return sortLabels(taskLabels.map((l) => (l.id === label.id ? label : l)));
+  });
+}
+
+/**
+ * Xóa nhãn (DELETE /labels, sự kiện label:deleted): bỏ khỏi `board.labels` và khỏi mọi thẻ.
+ * Cố ý KHÔNG đụng `version` của thẻ: server tăng version và phát task:updated cho các thẻ đó, và
+ * refreshTaskContent sẽ áp version mới (áp lại bản đã bỏ nhãn vẫn an toàn). Nhãn không có trên bảng → trả nguyên board.
+ */
+export function removeLabel(board: Board, labelId: string): Board {
+  if (!board.labels.some((l) => l.id === labelId)) return board;
+  const withoutLabel: Board = { ...board, labels: board.labels.filter((l) => l.id !== labelId) };
+  return mapTaskLabels(withoutLabel, (taskLabels) =>
+    taskLabels.some((l) => l.id === labelId) ? taskLabels.filter((l) => l.id !== labelId) : null,
+  );
 }
