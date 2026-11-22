@@ -17,19 +17,27 @@
  *   - project:access_revoked (bị xóa khỏi dự án) hoặc project:deleted → gọi `onAccessRevoked` để trang đưa về
  *     Dự án của tôi. (member:removed của chính mình đã đi kèm project:access_revoked từ server.)
  *
- * Sự kiện nhãn, sửa dự án, thành viên khác được thêm ở Tuần 7.
+ *   - label:created / label:updated / label:deleted → upsertLabel / upsertLabel / removeLabel (idempotent; cập nhật
+ *     cả board.labels lẫn bản sao nhúng trong mọi thẻ). Khác sự kiện thẻ: nhãn là thông tin cấp dự án và server
+ *     luôn trả ĐỦ nhãn kể cả khi bảng đang lọc, nên áp thẳng cả khi `partial`. Chỉ khi đang có request tải bảng bay
+ *     (`loading`) thì không áp (snapshot đang về có thể ghi đè) mà gom lại thành một lần tải lại.
+ *     label:deleted còn báo `onLabelDeleted` để trang gỡ `?label=` khỏi URL nếu đang lọc theo nhãn đó.
+ *
+ * Sửa dự án, thành viên khác được thêm ở Tuần 7.
  */
 import { useEffect, useRef } from 'react';
 import { socket } from '../realtime/socket';
-import type { Column, ColumnTaskOrder, Task } from '../types';
+import type { Column, ColumnTaskOrder, Label, Task } from '../types';
 import {
   addColumn,
   applyTaskOrder,
   refreshTaskContent,
   removeColumn,
+  removeLabel,
   removeTask,
   reorderColumns,
   updateColumn,
+  upsertLabel,
   upsertTask,
 } from '../utils/boardState';
 import type { BoardUpdater } from './useBoard';
@@ -70,6 +78,8 @@ interface UseBoardRealtimeOptions {
   applyUpdate: (updater: BoardUpdater) => void;
   reload: () => void;
   onAccessRevoked: () => void;
+  /** Một nhãn vừa bị người khác xóa (để trang gỡ nó khỏi bộ lọc trên URL nếu đang lọc theo nhãn đó) */
+  onLabelDeleted?: (labelId: string) => void;
 }
 
 export function useBoardRealtime({
@@ -80,11 +90,14 @@ export function useBoardRealtime({
   applyUpdate,
   reload,
   onAccessRevoked,
+  onLabelDeleted,
 }: UseBoardRealtimeOptions) {
   // Giữ callback mới nhất trong ref để effect không phải đăng ký lại mỗi lần render
   const onAccessRevokedRef = useRef(onAccessRevoked);
+  const onLabelDeletedRef = useRef(onLabelDeleted);
   useEffect(() => {
     onAccessRevokedRef.current = onAccessRevoked;
+    onLabelDeletedRef.current = onLabelDeleted;
   });
   // `partial` và `loading` đổi liên tục theo bộ lọc / mỗi lần tải. Đưa vào deps của effect socket bên dưới thì mỗi lần
   // đổi sẽ rời phòng, vào lại phòng và tải lại bảng (vòng lặp). Nên chỉ đọc giá trị mới nhất qua ref.
@@ -105,13 +118,16 @@ export function useBoardRealtime({
     };
 
     /** Đang lọc hoặc đang tải: không áp sự kiện thẻ trực tiếp mà tải lại (xem đầu file). */
-    const deferTaskEvent = (): boolean => {
+    const deferEvent = (respectPartial: boolean): boolean => {
       const { partial: isPartial, loading: isLoading } = gateRef.current;
-      if (!isPartial && !isLoading) return false;
+      if (!isLoading && !(respectPartial && isPartial)) return false;
       window.clearTimeout(reloadTimerRef.current);
       reloadTimerRef.current = window.setTimeout(reload, TASK_RELOAD_DELAY_MS);
       return true;
     };
+    const deferTaskEvent = () => deferEvent(true);
+    /** Nhãn: chỉ hoãn khi đang tải bảng, KHÔNG hoãn khi đang lọc (nhãn luôn đủ trên bảng lọc). */
+    const deferLabelEvent = () => deferEvent(false);
 
     // Sự kiện dự án khác (nếu socket còn ở phòng cũ) thì bỏ qua
     const onTaskCreated = (task: Task) => {
@@ -144,6 +160,19 @@ export function useBoardRealtime({
     const onColumnDeleted = (payload: ColumnDeletedPayload) => {
       if (payload.projectId === projectId) applyUpdate((b) => removeColumn(b, payload.columnId, payload.columnIds));
     };
+    // Nhãn: label:created/updated mang Label đầy đủ; label:deleted chỉ có { labelId } (không có projectId, nhưng
+    // removeLabel với id không có trên bảng thì không làm gì). Người thao tác không nhận sự kiện của chính mình.
+    const onLabelUpserted = (label: Label) => {
+      if (label.projectId !== projectId || deferLabelEvent()) return;
+      applyUpdate((b) => upsertLabel(b, label));
+    };
+    const onLabelDeletedEvent = ({ labelId }: { labelId: string }) => {
+      // Báo trang gỡ bộ lọc NGAY (cùng tick với removeLabel) kể cả khi bảng đang hoãn, để không có request
+      // /board?labelId=<đã xóa> và không hiện "Không rõ" trong ô lọc nhãn.
+      onLabelDeletedRef.current?.(labelId);
+      if (deferLabelEvent()) return;
+      applyUpdate((b) => removeLabel(b, labelId));
+    };
     // Bị xóa khỏi dự án hoặc dự án bị xóa → không còn xem được bảng này nữa
     const onAccessRevoked = (payload: { projectId: string }) => {
       if (payload.projectId === projectId) onAccessRevokedRef.current();
@@ -164,6 +193,9 @@ export function useBoardRealtime({
     socket.on('column:updated', onColumnUpdated);
     socket.on('column:reordered', onColumnsReordered);
     socket.on('column:deleted', onColumnDeleted);
+    socket.on('label:created', onLabelUpserted);
+    socket.on('label:updated', onLabelUpserted);
+    socket.on('label:deleted', onLabelDeletedEvent);
     socket.on('project:access_revoked', onAccessRevoked);
     socket.on('project:deleted', onAccessRevoked);
 
@@ -179,6 +211,9 @@ export function useBoardRealtime({
       socket.off('column:updated', onColumnUpdated);
       socket.off('column:reordered', onColumnsReordered);
       socket.off('column:deleted', onColumnDeleted);
+      socket.off('label:created', onLabelUpserted);
+      socket.off('label:updated', onLabelUpserted);
+      socket.off('label:deleted', onLabelDeletedEvent);
       socket.off('project:access_revoked', onAccessRevoked);
       socket.off('project:deleted', onAccessRevoked);
     };
