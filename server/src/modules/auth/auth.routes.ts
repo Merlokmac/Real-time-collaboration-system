@@ -32,6 +32,11 @@ const loginBody = z.object({
   password: z.string().min(1).max(72),
 });
 
+const changePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(72),
+  newPassword: z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự').max(72),
+});
+
 // Tạo session id mới sau khi đăng nhập để tránh session fixation
 function startSession(req: Request, userId: string) {
   return new Promise<void>((resolve, reject) => {
@@ -69,4 +74,16 @@ authRouter.get('/me', requireAuth, async (req, res) => {
   const user = await authService.getUser(currentUserId(req));
   if (!user) throw unauthorized();
   res.json({ user });
+});
+
+// Sai mật khẩu hiện tại cũng bị đếm vào giới hạn, tránh dò mật khẩu bằng phiên bị lộ
+authRouter.patch('/password', requireAuth, authLimiter, async (req, res) => {
+  const body = changePasswordBody.parse(req.body);
+  const revokedSessions = await authService.changePassword(currentUserId(req), req.sessionID, body);
+  res.json({ revokedSessions });
+});
+
+authRouter.post('/logout-all', requireAuth, async (req, res) => {
+  const revokedSessions = await authService.revokeOtherSessions(currentUserId(req), req.sessionID);
+  res.json({ revokedSessions });
 });
