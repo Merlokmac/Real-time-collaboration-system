@@ -1,21 +1,27 @@
 /*
- * Tải và giữ dữ liệu bảng Kanban của một dự án.
+ * Tải và giữ dữ liệu bảng Kanban của một dự án (kèm bộ lọc lấy từ URL, xem utils/boardFilter.ts).
  *
  * Luồng dữ liệu:
- *   1. Mở trang (hoặc bấm Thử lại) → gọi song song GET /projects/:id (tên, vai trò) và GET /projects/:id/board.
- *      Đổi dự án giữa chừng thì request cũ bị hủy (AbortController), kết quả cũ không ghi đè dự án mới.
+ *   1. Mở trang → GET /projects/:id (tên, vai trò; effect riêng, chỉ phụ thuộc projectId) và
+ *      GET /projects/:id/board?<bộ lọc> (effect phụ thuộc dự án + lần tải lại + bộ lọc).
+ *      Đổi lọc chỉ gọi lại /board. Đổi dự án / đổi lọc giữa chừng thì request cũ bị hủy (AbortController),
+ *      kết quả cũ không ghi đè kết quả mới.
  *   2. Thao tác (thêm cột, tạo thẻ...) → gọi API, CHỜ server trả về thành công, rồi mới cập nhật state
  *      bằng các hàm thuần trong utils/boardState.ts. Lỗi thì ném ra cho component hiển thị, state không đổi.
  *   3. Kéo thả (moveTask, moveColumn) là ngoại lệ: cập nhật tạm NGAY (optimistic) để thẻ không "nhảy về" lúc thả,
  *      rồi lấy kết quả server làm chuẩn; lỗi thì hoàn lại. Xem comment ở moveTask.
- *   4. `applyUpdate` cho phép bên ngoài (Tuần 4 kéo thả, Tuần 7 sự kiện realtime) áp một hàm thuần bất kỳ.
+ *   4. `applyUpdate` cho phép bên ngoài (kéo thả, sự kiện realtime) áp một hàm thuần bất kỳ.
  *
  * "Đang tải" suy ra từ việc dữ liệu đang có thuộc về request nào (`data.key !== requestKey`),
  * giống ProjectsPage, để không phải setState đồng bộ trong effect.
+ *
+ * Khi đổi bộ lọc, bảng cũ vẫn hiện (spinner nhỏ) cho tới khi bảng mới về, để thanh lọc và bảng không nhảy.
+ * Nếu lần tải mới LỖI mà đã có bảng của cùng dự án thì giữ bảng cũ và trả `filterError` (không làm `board = null`),
+ * nếu không BoardPage sẽ thay cả trang bằng màn lỗi và thanh lọc biến mất, người dùng không còn cách "Xóa lọc".
  */
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '../api/client';
-import { getBoard } from '../api/board';
+import { getBoard, type BoardFilter } from '../api/board';
 import * as columnsApi from '../api/columns';
 import { getProject } from '../api/projects';
 import * as tasksApi from '../api/tasks';
@@ -32,38 +38,107 @@ import {
   updateColumn,
   upsertTask,
 } from '../utils/boardState';
+import { filterKey, isFilterActive } from '../utils/boardFilter';
 
-type Loaded =
-  | { key: string; project: Project; board: Board; error?: undefined }
-  | { key: string; project?: undefined; board?: undefined; error: unknown };
+interface LoadedBoard {
+  key: string;
+  projectId: string;
+  /** Request đã tải ra `board` có lọc hay không (bảng đang hiện có thể là bảng lọc của lần trước) */
+  filtered: boolean;
+  board: Board;
+  error?: undefined;
+  /** Lần tải gần nhất lỗi nhưng vẫn giữ `board` của lần tốt trước đó */
+  filterError?: unknown;
+}
+interface FailedBoard {
+  key: string;
+  projectId: string;
+  board?: undefined;
+  error: unknown;
+  filterError?: undefined;
+}
+type BoardData = LoadedBoard | FailedBoard;
+
+type ProjectData =
+  | { projectId: string; project: Project; error?: undefined }
+  | { projectId: string; project?: undefined; error: unknown };
 
 export type BoardUpdater = (board: Board) => Board;
 
-export function useBoard(projectId: string) {
+export function useBoard(projectId: string, filter: BoardFilter) {
   const [reloadKey, setReloadKey] = useState(0);
-  const [data, setData] = useState<Loaded | null>(null);
+  const [projectRetryKey, setProjectRetryKey] = useState(0);
+  const [data, setData] = useState<BoardData | null>(null);
+  const [projectData, setProjectData] = useState<ProjectData | null>(null);
   // Thẻ / cột đang chờ server trả lời sau khi kéo thả (hiện "Đang lưu…", tạm khóa không cho kéo tiếp)
   const [savingTaskIds, setSavingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [savingColumnIds, setSavingColumnIds] = useState<ReadonlySet<string>>(() => new Set());
-  const requestKey = `${projectId}#${reloadKey}`;
+
+  // Effect phụ thuộc CHUỖI khóa chứ không phải object `filter` (object mới ở mỗi lần render sẽ gọi API liên tục)
+  const fKey = filterKey(filter);
+  const filterActive = isFilterActive(filter);
+  const requestKey = `${projectId}#${reloadKey}#${fKey}`;
+
+  // Tên + vai trò dự án: không phụ thuộc bộ lọc nên đổi lọc không gọi lại
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    getProject(projectId, { signal })
+      .then((project) => {
+        if (!signal.aborted) setProjectData({ projectId, project });
+      })
+      .catch((err: unknown) => {
+        if (!signal.aborted) setProjectData({ projectId, error: err });
+      });
+    return () => controller.abort();
+  }, [projectId, projectRetryKey]);
 
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
-    Promise.all([getProject(projectId, { signal }), getBoard(projectId, {}, { signal })])
-      .then(([project, board]) => setData({ key: requestKey, project, board }))
+    getBoard(projectId, filter, { signal })
+      .then((board) => {
+        if (signal.aborted) return;
+        setData({ key: requestKey, projectId, filtered: filterActive || board.filtered, board });
+      })
       .catch((err: unknown) => {
         if (signal.aborted) return;
-        setData({ key: requestKey, error: err });
+        setData((prev) => {
+          // 404 = mất quyền / dự án đã xóa → luôn là lỗi toàn trang, không giữ bảng cũ
+          const isNotFound = err instanceof ApiError && err.code === 'NOT_FOUND';
+          if (!isNotFound && prev?.board && prev.projectId === projectId) {
+            return { ...prev, key: requestKey, filterError: err };
+          }
+          return { key: requestKey, projectId, error: err };
+        });
       });
     return () => controller.abort();
+    // `filter` và `filterActive` được đại diện bởi `requestKey` (chứa filterKey); đưa object vào deps sẽ tải lại vô tận
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, requestKey]);
 
   const loading = data?.key !== requestKey;
   // Dữ liệu của dự án khác (vừa chuyển trang) thì không hiển thị
-  const current = data && data.key.startsWith(`${projectId}#`) ? data : null;
+  const current = data && data.projectId === projectId ? data : null;
+  const project = projectData?.projectId === projectId ? (projectData.project ?? null) : null;
+  const projectError = projectData?.projectId === projectId ? (projectData.error ?? null) : null;
+
+  /**
+   * Bảng đang hiện KHÔNG chắc đầy đủ thẻ: URL đang lọc, hoặc bảng đang hiện là kết quả của một request có lọc
+   * (vừa xóa lọc nhưng bảng không lọc chưa về). Mọi hành vi "cẩn thận" (tắt kéo thả, realtime tải lại,
+   * tạo thẻ rồi tải lại) dựa vào cờ này, không dựa vào `board.filtered`, để có hiệu lực ngay lúc đổi lọc.
+   */
+  const boardPartial = filterActive || (current?.board ? current.filtered : false);
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+  /** "Thử lại" của màn lỗi toàn trang: tải lại cả thông tin dự án lẫn bảng. */
+  const retry = useCallback(() => {
+    // Xóa kết quả lỗi cũ để trang quay về spinner ngay, thay vì giữ màn lỗi cho tới khi có kết quả mới
+    setProjectData(null);
+    setData(null);
+    setReloadKey((k) => k + 1);
+    setProjectRetryKey((k) => k + 1);
+  }, []);
 
   /** Áp một hàm thuần lên board hiện tại. Chưa tải xong hoặc đang lỗi thì bỏ qua. */
   const applyUpdate = useCallback((updater: BoardUpdater) => {
@@ -113,10 +188,16 @@ export function useBoard(projectId: string) {
   const createTask = useCallback(
     async (columnId: string, title: string) => {
       const task = await tasksApi.createTask(projectId, { columnId, title });
-      applyUpdate((b) => upsertTask(b, task));
+      if (boardPartial) {
+        // Bảng đang lọc: thẻ mới có thể không khớp bộ lọc nên không tự chèn vào bảng (sẽ hiện sai chỗ).
+        // Tải lại để server quyết định thẻ có hiện hay không.
+        reload();
+      } else {
+        applyUpdate((b) => upsertTask(b, task));
+      }
       return task;
     },
-    [projectId, applyUpdate],
+    [projectId, boardPartial, applyUpdate, reload],
   );
 
   /**
@@ -211,6 +292,44 @@ export function useBoard(projectId: string) {
     [projectId, board, applyUpdate],
   );
 
+  /*
+   * Chuyển thẻ xuống CUỐI cột `toColumnId` (ô "Chuyển sang cột…" của chi tiết thẻ).
+   *
+   * - Bảng đầy đủ và có thẻ trên bảng: dùng lại moveTask (cùng cách với kéo thả).
+   * - Bảng đang lọc (hoặc thẻ không có trên bảng vì bị bộ lọc ẩn): client không biết cột đích có bao nhiêu thẻ,
+   *   `toIndex` tính trên danh sách đã lọc sẽ lệch. Gửi số rất lớn: server kẹp (clamp) về cuối cột.
+   *   Sau đó tải lại bảng vì thẻ có thể không còn khớp bộ lọc (ví dụ lọc "Quá hạn" rồi chuyển sang cột hoàn thành).
+   *   Trả về bản thẻ mới của server để chi tiết thẻ biết cột mới dù thẻ không có trên bảng.
+   * Lỗi luôn được ném ra; không bao giờ resolve mà không làm gì (chi tiết thẻ sẽ tưởng đã thành công).
+   */
+  const moveTaskToEnd = useCallback(
+    async (taskId: string, toColumnId: string): Promise<Task | undefined> => {
+      const onBoard = board ? findTask(board, taskId) : undefined;
+      if (board && !boardPartial && onBoard) {
+        const target = board.columns.find((c) => c.id === toColumnId);
+        if (!target) throw new Error('Cột đích không còn trên bảng.');
+        await moveTask(taskId, toColumnId, target.tasks.filter((t) => t.id !== taskId).length);
+        return undefined;
+      }
+      // Đánh dấu "đang lưu" như kéo thả, để không có hai lệnh move chồng nhau cho cùng một thẻ
+      setSavingTaskIds((s) => new Set(s).add(taskId));
+      try {
+        const result = await tasksApi.moveTask(projectId, taskId, toColumnId, Number.MAX_SAFE_INTEGER);
+        // Không truyền movedTask cho applyTaskOrder: thẻ vắng mặt trên bảng không được chèn vào
+        applyUpdate((b) => refreshTaskContent(applyTaskOrder(b, result.columns), result.task));
+        reload();
+        return result.task;
+      } finally {
+        setSavingTaskIds((s) => {
+          const next = new Set(s);
+          next.delete(taskId);
+          return next;
+        });
+      }
+    },
+    [projectId, board, boardPartial, moveTask, applyUpdate, reload],
+  );
+
   /** Sắp xếp lại cột: cùng cách làm với moveTask, server trả `columnIds` là thứ tự chuẩn. */
   const moveColumn = useCallback(
     async (columnId: string, toIndex: number) => {
@@ -242,12 +361,19 @@ export function useBoard(projectId: string) {
   );
 
   return {
-    project: current?.project ?? null,
+    project,
     board,
-    /** Lỗi của lần tải gần nhất (ApiError hoặc lỗi khác) */
-    error: !loading ? (current?.error ?? null) : null,
+    /** Lỗi toàn trang: lần tải đầu của dự án thất bại (hoặc 404), hoặc không tải được thông tin dự án */
+    error: projectError ?? (!loading ? (current?.error ?? null) : null),
+    /** Lỗi của lần tải bảng mới nhất nhưng vẫn còn bảng cũ để hiện (xem đầu file) */
+    filterError: !loading ? (current?.filterError ?? null) : null,
     loading,
+    /** URL đang có bộ lọc (dùng cho giao diện) */
+    filterActive,
+    /** Bảng đang hiện có thể thiếu thẻ (dùng cho mọi hành vi an toàn: kéo thả, realtime, tạo thẻ) */
+    boardPartial,
     reload,
+    retry,
     applyUpdate,
     createColumn,
     renameColumn,
@@ -259,6 +385,7 @@ export function useBoard(projectId: string) {
     refreshTask,
     forgetTask,
     moveTask,
+    moveTaskToEnd,
     moveColumn,
     savingTaskIds,
     savingColumnIds,

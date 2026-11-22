@@ -53,7 +53,11 @@ interface TaskDetailProps {
   /** Thẻ không còn trên server (404): bỏ khỏi bảng */
   onGone: (taskId: string) => void;
   onSave: (taskId: string, input: UpdateTaskInput) => Promise<Task>;
-  onMove: (taskId: string, toColumnId: string, toIndex: number) => Promise<void>;
+  /**
+   * Chuyển thẻ xuống cuối cột `toColumnId`. Có thể trả về bản thẻ mới của server (khi thẻ không có trên bảng
+   * vì đang bị lọc ẩn) để hộp thoại biết cột mới.
+   */
+  onMove: (taskId: string, toColumnId: string) => Promise<Task | undefined>;
   onDelete: (taskId: string) => Promise<void>;
   onClose: () => void;
 }
@@ -208,8 +212,11 @@ export function TaskDetail({
     setMoving(true);
     setMoveError(null);
     try {
-      // Xuống cuối cột đích; toIndex tính khi đã bỏ thẻ khỏi cột cũ (giống kéo thả)
-      await onMove(task.id, target.id, target.tasks.filter((t) => t.id !== task.id).length);
+      // Xuống cuối cột đích. Cách tính vị trí do useBoard.moveTaskToEnd lo (khi đang lọc nó nhờ server kẹp về cuối cột)
+      const moved = await onMove(task.id, target.id);
+      // Thẻ không có trên bảng (đang bị lọc ẩn): bảng không báo cột mới cho ta, nên lấy từ kết quả server;
+      // nếu không ô chọn sẽ nhảy về cột cũ vì `latest` còn mang cột cũ.
+      if (moved) acceptLatest(moved);
       setTargetColumnId(null);
     } catch (err) {
       setMoveError(`Không chuyển được cột. ${getErrorMessage(err)}`);
@@ -251,7 +258,6 @@ export function TaskDetail({
   } else {
     title = task.title;
     const changedElsewhere = draft.base && draft.base.version !== task.version && !conflict;
-    const canMove = boardTask !== undefined;
 
     footer = (
       <div className={styles.footer}>
@@ -299,7 +305,7 @@ export function TaskDetail({
             id={`${formId}-column`}
             className={styles.select}
             value={selectedColumnId}
-            disabled={moving || !canMove}
+            disabled={moving}
             onChange={(e) => setTargetColumnId(e.target.value)}
           >
             {columns.map((c) => (
@@ -316,7 +322,6 @@ export function TaskDetail({
           )}
           {task.isOverdue && <span className={styles.overdueBadge}>Quá hạn</span>}
         </div>
-        {!canMove && <p className={styles.hint}>Thẻ chưa có trên bảng đang hiển thị. Tải lại bảng để chuyển cột.</p>}
         {moveError && <ErrorMessage>{moveError}</ErrorMessage>}
 
         {conflict && (

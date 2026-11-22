@@ -53,6 +53,11 @@ interface BoardProps extends ColumnActions {
   board: BoardData;
   savingTaskIds: ReadonlySet<string>;
   savingColumnIds: ReadonlySet<string>;
+  /**
+   * Tắt kéo THẺ (bảng đang lọc: client chỉ có một phần thẻ nên vị trí thả lệch với server).
+   * Kéo CỘT vẫn bật vì server luôn trả đủ cột, kể cả khi lọc.
+   */
+  taskDragDisabled: boolean;
   onCreateColumn: (name: string) => Promise<unknown>;
   onMoveTask: (taskId: string, toColumnId: string, toIndex: number) => void;
   onMoveColumn: (columnId: string, toIndex: number) => void;
@@ -71,6 +76,7 @@ export function Board({
   board,
   savingTaskIds,
   savingColumnIds,
+  taskDragDisabled,
   onCreateColumn,
   onMoveTask,
   onMoveColumn,
@@ -130,6 +136,8 @@ export function Board({
   function handleDragStart({ active }: DragStartEvent) {
     const type = typeOf(active.data);
     if (!type) return;
+    // Lớp chặn thứ hai (disabled trong useSortable là lớp đầu): không bao giờ bắt đầu kéo thẻ khi đang lọc
+    if (type === 'task' && taskDragDisabled) return;
     setActive({ id: String(active.id), type });
     lastOverId.current = null;
   }
@@ -159,6 +167,7 @@ export function Board({
     setActive(null);
     setDragBoard(null);
     if (!over) return;
+    if (type === 'task' && taskDragDisabled) return; // bảng vừa chuyển sang chế độ lọc giữa lúc kéo → bỏ
 
     if (type === 'column') {
       const toIndex = board.columns.findIndex((c) => c.id === over.id);
@@ -179,6 +188,14 @@ export function Board({
   }
 
   function handleDragCancel() {
+    setActive(null);
+    setDragBoard(null);
+  }
+
+  // Bật lọc giữa lúc đang kéo thẻ: hủy kéo và bỏ bản nháp `dragBoard`, nếu không lúc thả sẽ gửi toIndex tính trên
+  // danh sách thiếu thẻ. Dùng cách "đổi state ngay trong lúc render" (React cho phép với state của chính component)
+  // thay vì useEffect, để không có một lần vẽ thừa với bản nháp cũ. Lúc người dùng thả, handleDragEnd bỏ qua.
+  if (taskDragDisabled && (active?.type === 'task' || dragBoard)) {
     setActive(null);
     setDragBoard(null);
   }
@@ -205,6 +222,7 @@ export function Board({
                   column={column}
                   savingTaskIds={savingTaskIds}
                   saving={savingColumnIds.has(column.id)}
+                  taskDragDisabled={taskDragDisabled}
                   {...columnActions}
                 />
               </li>

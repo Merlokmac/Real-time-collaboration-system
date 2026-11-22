@@ -36,6 +36,8 @@ interface BoardColumnProps extends ColumnActions {
   savingTaskIds: ReadonlySet<string>;
   /** Cột vừa được kéo sang chỗ mới, đang chờ server */
   saving: boolean;
+  /** Bảng đang lọc: không cho kéo thẻ (kéo cột vẫn được) */
+  taskDragDisabled?: boolean;
 }
 
 function describeDeleteError(err: unknown): string {
@@ -49,6 +51,7 @@ export function BoardColumn({
   column,
   savingTaskIds,
   saving,
+  taskDragDisabled = false,
   onRename,
   onSetDone,
   onDelete,
@@ -156,7 +159,12 @@ export function BoardColumn({
           <ul className={styles.tasks}>
             {column.tasks.map((task) => (
               <li key={task.id}>
-                <SortableTaskCard task={task} onOpen={onOpenTask} saving={savingTaskIds.has(task.id)} />
+                <SortableTaskCard
+                  task={task}
+                  onOpen={onOpenTask}
+                  saving={savingTaskIds.has(task.id)}
+                  dragDisabled={taskDragDisabled}
+                />
               </li>
             ))}
           </ul>
