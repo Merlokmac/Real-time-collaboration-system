@@ -32,10 +32,14 @@ Client nên gửi header `x-socket-id: <socket.id>` khi gọi API. Khi có heade
 | POST   | `/auth/login`      | `{ email, password }`                                                                | `{ user }`                             |
 | POST   | `/auth/logout`     |                                                                                      | 204                                    |
 | GET    | `/auth/me`         |                                                                                      | `{ user }`                             |
+| PATCH  | `/auth/password`   | `{ currentPassword, newPassword (>=8) }`                                             | `{ revokedSessions }`                  |
+| POST   | `/auth/logout-all` |                                                                                      | `{ revokedSessions }`                  |
 | PATCH  | `/users/me`        | `{ name?, avatarUrl? }`                                                              | `{ user }`                             |
 | POST   | `/users/me/avatar` | `multipart/form-data`, trường `avatar` (png, jpg, gif, webp, tối đa 2MB)             | `{ user }`                             |
 | DELETE | `/users/me/avatar` |                                                                                      | `{ user }` (`avatarUrl` về `null`)     |
 | GET    | `/users/me/tasks`  | `?status=open\|done\|all` (mặc định `open`), `?overdue=true`, `?limit=` (tối đa 100) | `{ items: [task + project + column] }` |
+
+Đổi mật khẩu (`PATCH /auth/password`): sai mật khẩu hiện tại trả `400 WRONG_PASSWORD`, mật khẩu mới trùng mật khẩu cũ trả `400 SAME_PASSWORD`; sai nhiều lần cũng bị tính vào giới hạn `429` của đăng nhập. Đổi xong, phiên đang dùng được giữ lại, mọi phiên đăng nhập khác của tài khoản bị xóa. `POST /auth/logout-all` làm đúng việc xóa các phiên khác đó mà không đổi mật khẩu. `revokedSessions` là số phiên khác đã bị đăng xuất. Các socket đang mở ở thiết bị bị đăng xuất chỉ mất kết nối khi chúng tự ngắt hoặc kết nối lại.
 
 Ảnh tải lên có `avatarUrl` dạng `/api/uploads/avatars/<tên-file>`, dùng thẳng làm `src` của thẻ `<img>` (đi qua proxy `/api` của Vite). Đổi ảnh hoặc xóa ảnh thì file cũ trên server bị xóa. Lỗi riêng: `400 INVALID_IMAGE` (không phải ảnh), `413 FILE_TOO_LARGE` (quá 2MB).
 
