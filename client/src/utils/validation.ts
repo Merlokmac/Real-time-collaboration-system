@@ -14,6 +14,7 @@ export const LIMITS = {
   projectDescriptionMax: 1000,
   columnNameMax: 50,
   taskTitleMax: 200,
+  labelNameMax: 30,
 } as const;
 
 // Đủ để bắt lỗi gõ nhầm thường gặp (thiếu @, thiếu tên miền); không cố khớp toàn bộ chuẩn RFC
@@ -93,6 +94,13 @@ export function validateTaskTitle(value: string): string | undefined {
   const title = value.trim();
   if (!title) return 'Tiêu đề không được để trống';
   if (title.length > LIMITS.taskTitleMax) return `Tiêu đề tối đa ${LIMITS.taskTitleMax} ký tự`;
+  return undefined;
+}
+
+export function validateLabelName(value: string): string | undefined {
+  const name = value.trim();
+  if (!name) return 'Tên nhãn không được để trống';
+  if (name.length > LIMITS.labelNameMax) return `Tên nhãn tối đa ${LIMITS.labelNameMax} ký tự`;
   return undefined;
 }
 

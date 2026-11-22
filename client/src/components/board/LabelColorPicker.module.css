@@ -1,0 +1,69 @@
+.picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Ô radio thật nằm trong, chỉ ẩn khỏi mắt (bàn phím + đọc màn hình vẫn dùng được) */
+.swatch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatch:has(input:focus-visible),
+.custom:has(input:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+
+.selected {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.custom {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.customSelected {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.custom input {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
