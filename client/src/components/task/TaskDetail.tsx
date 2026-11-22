@@ -22,7 +22,7 @@
  * Chỉ render MỘT <Modal> ở cùng vị trí cho mọi trạng thái (đang tải, lỗi, không tìm thấy, đã tải), để hộp thoại
  * không bị dựng lại khi tải xong (giữ focus và chỗ trả focus khi đóng).
  */
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, getErrorMessage, getFieldErrors } from '../../api/client';
 import { listMembers } from '../../api/members';
 import { getTask, type UpdateTaskInput } from '../../api/tasks';
@@ -52,6 +52,8 @@ interface TaskDetailProps {
   onRefresh: (task: Task) => void;
   /** Thẻ không còn trên server (404): bỏ khỏi bảng */
   onGone: (taskId: string) => void;
+  /** Tạo nhãn mới cho dự án (cập nhật bảng, trả nhãn vừa tạo) */
+  onCreateLabel: (name: string, color: string) => Promise<Label>;
   onSave: (taskId: string, input: UpdateTaskInput) => Promise<Task>;
   /**
    * Chuyển thẻ xuống cuối cột `toColumnId`. Có thể trả về bản thẻ mới của server (khi thẻ không có trên bảng
@@ -83,6 +85,7 @@ export function TaskDetail({
   labels,
   onRefresh,
   onGone,
+  onCreateLabel,
   onSave,
   onMove,
   onDelete,
@@ -157,6 +160,11 @@ export function TaskDetail({
     setTitleError(error);
     if (error) return;
 
+    // Bản nháp có thể còn id nhãn vừa bị người khác xóa. Server kiểm tra nhãn (400 "Nhãn không thuộc dự án") TRƯỚC khi
+    // kiểm version, nên gửi id đó sẽ nhận 400 chứ không phải 409 và người dùng không được chọn giữ bản nào.
+    // Bỏ id đã xóa là vô hại về nghĩa; version thẻ đã tăng (server tăng khi xóa nhãn) nên vẫn đi vào luồng 409 như thiết kế.
+    if (changes.labelIds) changes = { ...changes, labelIds: changes.labelIds.filter((id) => labels.some((l) => l.id === id)) };
+
     setSaving(true);
     setFormError(null);
     try {
@@ -175,6 +183,21 @@ export function TaskDetail({
     } finally {
       setSaving(false);
     }
+  }
+
+  // Hộp đã đóng / đổi thẻ trong lúc chờ API tạo nhãn thì bỏ qua kết quả (nhãn vẫn tồn tại ở dự án)
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  /** Tạo nhãn rồi gắn vào BẢN NHÁP (không tự lưu thẻ: người dùng vẫn bấm Lưu, xung đột version giữ nguyên hành vi). */
+  async function handleCreateLabel(name: string, color: string) {
+    const label = await onCreateLabel(name, color);
+    if (mountedRef.current) draft.addLabelId(label.id);
   }
 
   function handleSubmit(e: FormEvent) {
@@ -348,6 +371,7 @@ export function TaskDetail({
             members={members}
             currentAssignee={task.assignee}
             labels={labels}
+            onCreateLabel={handleCreateLabel}
             titleError={titleError}
             disabled={saving || conflict !== null}
             onChange={draft.setField}

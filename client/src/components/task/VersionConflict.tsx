@@ -40,7 +40,10 @@ export function VersionConflict({ current, draft, changes, members, labels, subm
     return members?.find((m) => m.userId === userId)?.user.name ?? 'Người dùng khác';
   };
   const labelNames = (ids: string[]) =>
-    ids.length === 0 ? 'Không có nhãn' : ids.map((id) => labels.find((l) => l.id === id)?.name ?? '?').join(', ');
+    ids.length === 0 ? 'Không có nhãn' : ids
+      // Nhãn đã bị xóa (bản nháp còn id cũ) thì bỏ qua, không hiện "?"; TaskDetail cũng bỏ id đó khi gửi
+      .flatMap((id) => labels.find((l) => l.id === id)?.name ?? [])
+      .join(', ') || 'Không có nhãn';
   const dueText = (day: string | null) => (day ? formatDate(`${day}T00:00:00.000Z`) : 'Không có hạn');
 
   const rows = (Object.keys(changes) as (keyof TaskChanges)[]).map((key) => {

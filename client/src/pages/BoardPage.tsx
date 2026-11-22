@@ -16,11 +16,12 @@
  *
  * Không dùng PageContainer: bảng phải chiếm hết chiều ngang và chiều cao còn lại để cuộn ngang.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError, getErrorMessage } from '../api/client';
 import { Board } from '../components/board/Board';
 import { BoardFilters } from '../components/board/BoardFilters';
+import { LabelManager } from '../components/board/LabelManager';
 import { ChatPanel } from '../components/chat/ChatPanel';
 import { Button } from '../components/common/Button';
 import { ErrorMessage } from '../components/common/ErrorMessage';
@@ -40,7 +41,15 @@ export function BoardPage() {
   const { projectId = '' } = useParams<{ projectId: string }>();
   // URL là nguồn sự thật của bộ lọc (?q=&assignee=&label=&overdue=) và của thẻ đang mở (?task=)
   const [searchParams, setSearchParams] = useSearchParams();
-  const filter = useMemo(() => parseFilter(searchParams), [searchParams]);
+  // Nhãn vừa bị xóa trong khi đang lọc theo nó (xem handleLabelDeleted): coi như đã bỏ khỏi bộ lọc NGAY, không đợi URL.
+  const [goneLabelId, setGoneLabelId] = useState<string | null>(null);
+  const filter = useMemo(() => {
+    const parsed = parseFilter(searchParams);
+    return goneLabelId !== null && parsed.labelId === goneLabelId ? { ...parsed, labelId: undefined } : parsed;
+  }, [searchParams, goneLabelId]);
+  // URL đã được dọn xong (không còn ?label= của nhãn đó) thì thôi che: khỏi giữ id nhãn cũ mãi trong state.
+  // Đổi state ngay lúc render là cách React khuyến nghị cho state dẫn xuất.
+  if (goneLabelId !== null && parseFilter(searchParams).labelId !== goneLabelId) setGoneLabelId(null);
   const {
     project,
     board,
@@ -55,6 +64,9 @@ export function BoardPage() {
     renameColumn,
     setColumnDone,
     deleteColumn,
+    createLabel,
+    updateLabel,
+    deleteLabel,
     createTask,
     updateTask,
     deleteTask,
@@ -70,17 +82,7 @@ export function BoardPage() {
   const [moveError, setMoveError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [inviting, setInviting] = useState(false);
-
-  useBoardRealtime({
-    projectId,
-    ready: board !== null,
-    partial: boardPartial,
-    loading,
-    applyUpdate,
-    reload,
-    // Bị chủ dự án xóa khỏi dự án trong lúc đang xem
-    onAccessRevoked: () => navigate('/projects', { replace: true }),
-  });
+  const [managingLabels, setManagingLabels] = useState(false);
 
   // Thông báo lỗi kéo thả tự ẩn sau 6 giây (vẫn có nút đóng)
   useEffect(() => {
@@ -192,6 +194,49 @@ export function BoardPage() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  // ---------- Nhãn bị xóa khi đang lọc theo nhãn đó ----------
+  // Đọc bộ lọc mới nhất qua ref để callback ổn định (nó nằm trong deps của effect socket phía dưới)
+  const labelFilterRef = useRef(filter.labelId);
+  useEffect(() => {
+    labelFilterRef.current = filter.labelId;
+  });
+  /**
+   * Nhãn `labelId` vừa bị xóa (người khác xóa qua label:deleted, hoặc chính mình xóa xong). Đang lọc theo nhãn đó thì gỡ
+   * `?label=` ngay trong cùng tick với việc bỏ nhãn khỏi bảng: nếu để lại, ô lọc hiện "Không rõ", bảng 0 thẻ và có thể
+   * gửi request /board?labelId=<đã xóa>. Đổi tên/màu nhãn không ảnh hưởng bộ lọc (lọc theo id).
+   */
+  const handleLabelDeleted = useCallback(
+    (labelId: string) => {
+      if (labelFilterRef.current !== labelId) return;
+      // react-router cập nhật URL qua startTransition nên có thể trễ một nhịp so với state của bảng. setGoneLabelId được
+      // React gộp cùng đợt với việc bỏ nhãn khỏi bảng, nên ô lọc không bao giờ có lúc hiện "Không rõ" và không có request
+      // /board?labelId=<đã xóa>; URL được dọn ngay sau đó.
+      setGoneLabelId(labelId);
+      updateParams((p) => writeFilter(p, { ...parseFilter(p), labelId: undefined }));
+      setNotice('Nhãn đang lọc đã bị xóa.');
+    },
+    [updateParams],
+  );
+  const handleDeleteLabel = useCallback(
+    async (labelId: string) => {
+      await deleteLabel(labelId);
+      handleLabelDeleted(labelId);
+    },
+    [deleteLabel, handleLabelDeleted],
+  );
+
+  useBoardRealtime({
+    projectId,
+    ready: board !== null,
+    partial: boardPartial,
+    loading,
+    applyUpdate,
+    reload,
+    // Bị chủ dự án xóa khỏi dự án trong lúc đang xem
+    onAccessRevoked: () => navigate('/projects', { replace: true }),
+    onLabelDeleted: handleLabelDeleted,
+  });
+
   const handleCreateTask = useCallback(
     async (columnId: string, title: string) => {
       const task = await createTask(columnId, title);
@@ -252,6 +297,9 @@ export function BoardPage() {
               Mời thành viên
             </Button>
           )}
+          <Button variant="secondary" onClick={() => setManagingLabels(true)}>
+            Nhãn
+          </Button>
           <Button variant={chatOpen ? 'primary' : 'secondary'} onClick={() => setChatOpen((v) => !v)} aria-expanded={chatOpen}>
             Trò chuyện
           </Button>
@@ -303,6 +351,18 @@ export function BoardPage() {
 
       {inviting && <InviteMemberDialog projectId={projectId} onClose={() => setInviting(false)} />}
 
+      {managingLabels && (
+        <LabelManager
+          labels={board.labels}
+          columns={board.columns}
+          partial={boardPartial}
+          onCreate={createLabel}
+          onUpdate={updateLabel}
+          onDelete={handleDeleteLabel}
+          onClose={() => setManagingLabels(false)}
+        />
+      )}
+
       {openTaskId && (
         <TaskDetail
           // key: đổi sang thẻ khác thì dựng lại từ đầu (bỏ bản nháp, trạng thái tải của thẻ cũ)
@@ -314,6 +374,7 @@ export function BoardPage() {
           labels={board.labels}
           onRefresh={refreshTask}
           onGone={forgetTask}
+          onCreateLabel={createLabel}
           onSave={updateTask}
           onMove={moveTaskToEnd}
           onDelete={deleteTask}

@@ -63,14 +63,29 @@ export function useTaskDraft(task: Task | undefined) {
   const active = editing && task && editing.base.id === task.id && differs(editing.draft, editing.base) ? editing : null;
   const changes = active ? changesBetween(active.draft, active.base) : {};
 
-  function setField<K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) {
+  /** Sửa bản nháp bằng một hàm nhận bản nháp MỚI NHẤT (không dùng giá trị đã đóng gói lúc render). */
+  function updateDraft(fn: (draft: TaskDraft) => TaskDraft) {
     if (!task) return;
     setEditing((prev) => {
       // Không có bản nháp còn hiệu lực → bắt đầu bản nháp mới từ thẻ MỚI NHẤT (base = thẻ hiện tại)
       const keep = prev && prev.base.id === task.id && differs(prev.draft, prev.base);
       const current: Editing = keep ? prev : { base: task, draft: draftOf(task) };
-      return { ...current, draft: { ...current.draft, [key]: value } };
+      return { ...current, draft: fn(current.draft) };
     });
+  }
+
+  function setField<K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) {
+    updateDraft((draft) => ({ ...draft, [key]: value }));
+  }
+
+  /**
+   * Thêm một nhãn vào bản nháp. Dùng sau khi `await` tạo nhãn: người dùng có thể đã tick nhãn khác trong lúc chờ,
+   * nên phải đọc bản nháp mới nhất (hàm cập nhật của setState) chứ không dùng `values.labelIds` lúc bấm.
+   */
+  function addLabelId(labelId: string) {
+    updateDraft((draft) =>
+      draft.labelIds.includes(labelId) ? draft : { ...draft, labelIds: [...draft.labelIds, labelId].sort() },
+    );
   }
 
   return {
@@ -81,6 +96,7 @@ export function useTaskDraft(task: Task | undefined) {
     changes,
     dirty: Object.keys(changes).length > 0,
     setField,
+    addLabelId,
     /** Bỏ bản nháp, quay về hiển thị thẻ hiện tại */
     reset: () => setEditing(null),
   };
