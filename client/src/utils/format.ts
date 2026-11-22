@@ -3,6 +3,8 @@
 const relative = new Intl.RelativeTimeFormat('vi', { numeric: 'auto' });
 const dateTime = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
 const dateOnly = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short' });
+// dateStyle 'short' của vi-VN cho năm 2 chữ số (24/10/26), hạn công việc cần rõ năm
+const dueDate = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -11,6 +13,11 @@ const DAY = 24 * HOUR;
 /** "14:05 20/10/2026" — dùng cho tooltip khi cần giờ chính xác */
 export function formatDateTime(iso: string): string {
   return dateTime.format(new Date(iso));
+}
+
+/** "20/10/2026" — dùng cho hạn công việc (chỉ có ngày) */
+export function formatDate(iso: string): string {
+  return dueDate.format(new Date(iso));
 }
 
 /**

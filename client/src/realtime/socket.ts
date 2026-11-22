@@ -1,7 +1,11 @@
 import { io } from 'socket.io-client';
 import { setSocketId } from '../api/client';
 
-export const socket = io('http://localhost:4000', {
+// Mặc định nối cùng origin với trang: khi dev, Vite proxy /socket.io sang server (vite.config.ts);
+// khi deploy khác origin thì đặt VITE_SOCKET_URL.
+const SOCKET_URL: string | undefined = import.meta.env.VITE_SOCKET_URL || undefined;
+
+export const socket = io(SOCKET_URL, {
   autoConnect: false,
   withCredentials: true,
 });

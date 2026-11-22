@@ -8,11 +8,13 @@ export function RealtimeProvider({
   children: ReactNode;
 }) {
   const { user, loading } = useAuth();
+  // Chỉ phụ thuộc id: sửa hồ sơ (setUser object mới) không được làm socket ngắt rồi nối lại, mất phòng dự án
+  const userId = user?.id ?? null;
 
   useEffect(() => {
     if (loading) return;
 
-    if (!user) {
+    if (!userId) {
       socket.disconnect();
       return;
     }
@@ -22,7 +24,7 @@ export function RealtimeProvider({
     return () => {
       socket.disconnect();
     };
-  }, [user, loading]);
+  }, [userId, loading]);
 
   return children;
 }

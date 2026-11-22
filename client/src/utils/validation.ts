@@ -1,5 +1,5 @@
 /*
- * Kiểm tra dữ liệu form phía client, giới hạn khớp với zod ở server/src/modules/{auth,users,projects}/*.routes.ts.
+ * Kiểm tra dữ liệu form phía client, giới hạn khớp với zod ở server/src/modules/{auth,users,projects,columns,tasks}/*.routes.ts.
  * Mục đích chỉ là báo lỗi sớm cho người dùng; server vẫn kiểm tra lại (không tin client).
  * Mỗi hàm trả về câu lỗi tiếng Việt, hoặc undefined nếu hợp lệ.
  */
@@ -12,6 +12,8 @@ export const LIMITS = {
   avatarUrlMax: 500,
   projectNameMax: 100,
   projectDescriptionMax: 1000,
+  columnNameMax: 50,
+  taskTitleMax: 200,
 } as const;
 
 // Đủ để bắt lỗi gõ nhầm thường gặp (thiếu @, thiếu tên miền); không cố khớp toàn bộ chuẩn RFC
@@ -77,6 +79,20 @@ export function validateProjectName(value: string): string | undefined {
 
 export function validateProjectDescription(value: string): string | undefined {
   if (value.trim().length > LIMITS.projectDescriptionMax) return `Mô tả tối đa ${LIMITS.projectDescriptionMax} ký tự`;
+  return undefined;
+}
+
+export function validateColumnName(value: string): string | undefined {
+  const name = value.trim();
+  if (!name) return 'Tên cột không được để trống';
+  if (name.length > LIMITS.columnNameMax) return `Tên cột tối đa ${LIMITS.columnNameMax} ký tự`;
+  return undefined;
+}
+
+export function validateTaskTitle(value: string): string | undefined {
+  const title = value.trim();
+  if (!title) return 'Tiêu đề không được để trống';
+  if (title.length > LIMITS.taskTitleMax) return `Tiêu đề tối đa ${LIMITS.taskTitleMax} ký tự`;
   return undefined;
 }
 

@@ -20,19 +20,25 @@ interface ModalProps {
   children: ReactNode;
   /** Các nút ở chân hộp thoại (Hủy, Lưu...) */
   footer?: ReactNode;
+  /** 'md' (mặc định, 520px) cho form ngắn; 'lg' (720px) cho nội dung dài như chi tiết thẻ */
+  size?: 'md' | 'lg';
 }
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-// Đếm số modal đang mở, để modal lồng nhau không mở khóa cuộn quá sớm
-let openCount = 0;
+// Các modal đang mở, theo thứ tự mở. Dùng để:
+//   - không mở khóa cuộn trang khi modal con đóng mà modal cha vẫn mở;
+//   - chỉ modal trên cùng xử lý Esc/Tab (ví dụ hộp xác nhận xóa mở trên chi tiết thẻ: Esc chỉ đóng hộp xác nhận).
+const openModals: object[] = [];
 
-export function Modal({ title, onClose, children, footer }: ModalProps) {
+export function Modal({ title, onClose, children, footer, size = 'md' }: ModalProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   // Phải lưu ngay lúc render đầu: tới khi effect chạy thì autoFocus của ô nhập bên trong đã lấy mất focus
   const [returnFocusTo] = useState(() => document.activeElement as HTMLElement | null);
+  // Định danh của modal này trong openModals
+  const [token] = useState(() => ({}));
 
   // Giữ onClose mới nhất trong ref để effect bên dưới chỉ chạy một lần khi mount
   const onCloseRef = useRef(onClose);
@@ -43,24 +49,27 @@ export function Modal({ title, onClose, children, footer }: ModalProps) {
   // Khóa cuộn nền + lưu/trả lại focus
   useEffect(() => {
     const dialog = dialogRef.current;
-    // Focus ô nhập đầu tiên (không có thì focus chính hộp thoại) để gõ được ngay
-    const firstField = dialog?.querySelector<HTMLElement>(
-      'input:not([disabled]), textarea:not([disabled]), select:not([disabled])',
-    );
+    // Focus ô có `data-autofocus` nếu có, không thì ô nhập đầu tiên (không có thì chính hộp thoại) để gõ được ngay.
+    // data-autofocus cần khi ô đầu tiên là <select> làm việc ngay khi đổi giá trị (phím ↑/↓ trên Windows đổi được
+    // giá trị của select đang đóng).
+    const firstField =
+      dialog?.querySelector<HTMLElement>('[data-autofocus]:not([disabled])') ??
+      dialog?.querySelector<HTMLElement>('input:not([disabled]), textarea:not([disabled]), select:not([disabled])');
     (firstField ?? dialog)?.focus();
 
-    openCount += 1;
+    openModals.push(token);
     document.body.style.overflow = 'hidden';
     return () => {
-      openCount -= 1;
-      if (openCount === 0) document.body.style.overflow = '';
+      openModals.splice(openModals.indexOf(token), 1);
+      if (openModals.length === 0) document.body.style.overflow = '';
       returnFocusTo?.focus?.();
     };
-  }, [returnFocusTo]);
+  }, [returnFocusTo, token]);
 
-  // Esc để đóng, Tab chạy vòng trong hộp thoại
+  // Esc để đóng, Tab chạy vòng trong hộp thoại (chỉ modal trên cùng)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      if (openModals[openModals.length - 1] !== token) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
@@ -81,7 +90,7 @@ export function Modal({ title, onClose, children, footer }: ModalProps) {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [token]);
 
   // Chỉ đóng khi bấm đúng vào nền (không phải bôi đen chữ trong form rồi thả chuột ra ngoài)
   const mouseDownOnBackdrop = useRef(false);
@@ -96,7 +105,7 @@ export function Modal({ title, onClose, children, footer }: ModalProps) {
     <div className={styles.backdrop} onMouseDown={handleBackdropMouseDown} onClick={handleBackdropClick}>
       <div
         ref={dialogRef}
-        className={styles.dialog}
+        className={`${styles.dialog} ${size === 'lg' ? styles.large : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
