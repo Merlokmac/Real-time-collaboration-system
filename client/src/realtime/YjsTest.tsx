@@ -20,8 +20,13 @@ export function YjsTest({ taskId }: Props) {
   useEffect(() => {
     const doc = new Y.Doc();
 
+    // Kết nối Yjs qua proxy, tự hỗ trợ ws và wss
+    const yjsUrl =
+      import.meta.env.VITE_YJS_URL ||
+      `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/yjs`;
+
     const provider = new WebsocketProvider(
-      'ws://localhost:4000/yjs',
+      yjsUrl,
       `task:${taskId}`,
       doc,
     );
