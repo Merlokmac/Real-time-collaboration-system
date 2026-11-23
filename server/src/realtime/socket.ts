@@ -1,5 +1,6 @@
+
 import type { Server as HttpServer } from 'node:http';
-import { Server } from 'socket.io';
+import { Server, type Socket } from 'socket.io';
 
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
@@ -7,6 +8,17 @@ import { getSessionUserId } from '../lib/session';
 import { setRealtimeBridge } from './bridge';
 import { revokeYjsConnections } from './yjs';
 import { projectRoom, userRoom } from './events';
+
+type EditingPayload = {
+  projectId?: string;
+  taskId?: string;
+  editing?: boolean;
+};
+
+type EditingSession = {
+  projectId: string;
+  taskId: string;
+};
 
 export function attachSocketIO(server: HttpServer) {
   const io = new Server(server, {
@@ -16,7 +28,11 @@ export function attachSocketIO(server: HttpServer) {
     },
   });
 
-  // Xác thực socket bằng session và lưu thông tin user
+  // Lưu trạng thái chỉnh sửa và yêu cầu đang chờ theo từng socket
+  const editingSessions = new Map<string, Map<string, EditingSession>>();
+  const editingRequests = new Map<string, Map<string, EditingSession>>();
+
+  // Xác thực socket bằng session
   io.use(async (socket, next) => {
     try {
       const userId = await getSessionUserId(socket.request);
@@ -26,13 +42,8 @@ export function attachSocketIO(server: HttpServer) {
       }
 
       const user = await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-        select: {
-          id: true,
-          name: true,
-        },
+        where: { id: userId },
+        select: { id: true, name: true },
       });
 
       if (!user) {
@@ -48,11 +59,10 @@ export function attachSocketIO(server: HttpServer) {
     }
   });
 
-  // Phát danh sách user đang online trong project
+  // Phát danh sách thành viên online trong project
   async function broadcastPresence(projectId: string) {
     const room = projectRoom(projectId);
     const sockets = await io.in(room).fetchSockets();
-
     const users = new Map<string, string>();
 
     for (const peer of sockets) {
@@ -73,10 +83,85 @@ export function attachSocketIO(server: HttpServer) {
     });
   }
 
+  // Hủy yêu cầu đang chờ và dừng trạng thái chỉnh sửa
+  function stopEditing(socket: Socket, projectId?: string, taskId?: string) {
+    const requests = editingRequests.get(socket.id);
+
+    if (requests) {
+      for (const [key, request] of requests) {
+        if (projectId && request.projectId !== projectId) continue;
+        if (taskId && request.taskId !== taskId) continue;
+
+        requests.delete(key);
+      }
+
+      if (requests.size === 0) {
+        editingRequests.delete(socket.id);
+      }
+    }
+
+    const sessions = editingSessions.get(socket.id);
+
+    if (!sessions) return;
+
+    for (const [key, session] of sessions) {
+      if (projectId && session.projectId !== projectId) continue;
+      if (taskId && session.taskId !== taskId) continue;
+
+      socket.to(projectRoom(session.projectId)).emit('task:editing', {
+        projectId: session.projectId,
+        taskId: session.taskId,
+        socketId: socket.id,
+        userId: String(socket.data.userId),
+        name: String(socket.data.userName),
+        editing: false,
+      });
+
+      sessions.delete(key);
+    }
+
+    if (sessions.size === 0) {
+      editingSessions.delete(socket.id);
+    }
+  }
+
+  // Gửi danh sách người đang sửa cho thành viên mở thẻ sau
+  function sendEditingSnapshot(socket: Socket, projectId: string, taskId: string) {
+    const editors = [];
+
+    for (const [socketId, sessions] of editingSessions) {
+      const session = sessions.get(taskId);
+
+      if (!session || session.projectId !== projectId || socketId === socket.id) {
+        continue;
+      }
+
+      const peer = io.sockets.sockets.get(socketId);
+
+      if (!peer || !peer.connected || !peer.rooms.has(projectRoom(projectId))) {
+        continue;
+      }
+
+      editors.push({
+        projectId,
+        taskId,
+        socketId,
+        userId: String(peer.data.userId),
+        name: String(peer.data.userName),
+        editing: true,
+      });
+    }
+
+    socket.emit('task:editing:snapshot', {
+      projectId,
+      taskId,
+      editors,
+    });
+  }
+
   io.on('connection', (socket) => {
     const userId = String(socket.data.userId);
     const userName = String(socket.data.userName);
-
     const joinedProjects = new Set<string>();
 
     console.log('Socket connected:', {
@@ -86,7 +171,7 @@ export function attachSocketIO(server: HttpServer) {
 
     socket.join(userRoom(userId));
 
-    // Join project room sau khi kiểm tra quyền thành viên
+    // Vào project room sau khi kiểm tra quyền
     socket.on('project:join', async (projectId: unknown) => {
       if (typeof projectId !== 'string' || !projectId.trim()) {
         return;
@@ -118,7 +203,7 @@ export function attachSocketIO(server: HttpServer) {
       }
     });
 
-    // Rời project room và cập nhật presence
+    // Rời project và xóa trạng thái đang sửa
     socket.on('project:leave', async (projectId: unknown) => {
       if (typeof projectId !== 'string' || !projectId.trim()) {
         return;
@@ -128,6 +213,8 @@ export function attachSocketIO(server: HttpServer) {
         const room = projectRoom(projectId);
 
         if (!socket.rooms.has(room)) return;
+
+        stopEditing(socket, projectId);
 
         socket.to(room).emit('chat:typing', {
           projectId,
@@ -148,11 +235,131 @@ export function attachSocketIO(server: HttpServer) {
       }
     });
 
-    // Phát trạng thái đang nhập cho những user khác
+    // Phát trạng thái đang chỉnh sửa thẻ
+    socket.on('task:editing', async (payload: EditingPayload) => {
+      const projectId = payload?.projectId;
+      const taskId = payload?.taskId;
+      const editing = payload?.editing;
+
+      if (
+        typeof projectId !== 'string' ||
+        !projectId.trim() ||
+        typeof taskId !== 'string' ||
+        !taskId.trim() ||
+        typeof editing !== 'boolean'
+      ) {
+        return;
+      }
+
+      if (!editing) {
+        stopEditing(socket, projectId, taskId);
+        return;
+      }
+
+      const room = projectRoom(projectId);
+
+      if (!socket.rooms.has(room)) return;
+
+      // Ghi nhận yêu cầu trước khi truy vấn database
+      const requests = editingRequests.get(socket.id) ?? new Map<string, EditingSession>();
+      const request: EditingSession = { projectId, taskId };
+
+      requests.set(taskId, request);
+      editingRequests.set(socket.id, requests);
+
+      try {
+        const task = await prisma.task.findFirst({
+          where: { id: taskId, projectId },
+          select: { id: true },
+        });
+
+        // Không phát event nếu yêu cầu đã bị hủy hoặc socket mất quyền
+        if (
+          editingRequests.get(socket.id)?.get(taskId) !== request ||
+          !task ||
+          !socket.connected ||
+          !socket.rooms.has(room)
+        ) {
+          return;
+        }
+
+        requests.delete(taskId);
+
+        if (requests.size === 0) {
+          editingRequests.delete(socket.id);
+        }
+
+        const sessions = editingSessions.get(socket.id) ?? new Map<string, EditingSession>();
+
+        sessions.set(taskId, { projectId, taskId });
+        editingSessions.set(socket.id, sessions);
+
+        socket.to(room).emit('task:editing', {
+          projectId,
+          taskId,
+          socketId: socket.id,
+          userId,
+          name: userName,
+          editing: true,
+        });
+      } catch (error) {
+        if (editingRequests.get(socket.id)?.get(taskId) === request) {
+          requests.delete(taskId);
+
+          if (requests.size === 0) {
+            editingRequests.delete(socket.id);
+          }
+        }
+
+        console.error('Task editing error:', error);
+      }
+    });
+
+    // Đồng bộ trạng thái cho người vừa mở thẻ
+    socket.on('task:editing:get', async (payload: { projectId?: string; taskId?: string }) => {
+      const projectId = payload?.projectId;
+      const taskId = payload?.taskId;
+
+      if (
+        typeof projectId !== 'string' ||
+        !projectId.trim() ||
+        typeof taskId !== 'string' ||
+        !taskId.trim()
+      ) {
+        return;
+      }
+
+      try {
+        const task = await prisma.task.findFirst({
+          where: {
+            id: taskId,
+            projectId,
+            project: {
+              members: {
+                some: { userId },
+              },
+            },
+          },
+          select: { id: true },
+        });
+
+        if (!task || !socket.connected) return;
+
+        sendEditingSnapshot(socket, projectId, taskId);
+      } catch (error) {
+        console.error('Task editing snapshot error:', error);
+      }
+    });
+
+    // Phát trạng thái đang nhập trong chat
     socket.on('chat:typing', (payload: { projectId?: string; typing?: boolean }) => {
       const projectId = payload?.projectId;
 
-      if (typeof projectId !== 'string' || !projectId.trim() || typeof payload?.typing !== 'boolean') {
+      if (
+        typeof projectId !== 'string' ||
+        !projectId.trim() ||
+        typeof payload?.typing !== 'boolean'
+      ) {
         return;
       }
 
@@ -170,12 +377,12 @@ export function attachSocketIO(server: HttpServer) {
       });
     });
 
-    // Báo ngừng typing trước khi socket disconnect
+    // Dọn trạng thái trước khi socket mất kết nối
     socket.on('disconnecting', () => {
+      stopEditing(socket);
+
       for (const projectId of joinedProjects) {
-        if (!socket.rooms.has(projectRoom(projectId))) {
-          continue;
-        }
+        if (!socket.rooms.has(projectRoom(projectId))) continue;
 
         socket.to(projectRoom(projectId)).emit('chat:typing', {
           projectId,
@@ -186,8 +393,11 @@ export function attachSocketIO(server: HttpServer) {
       }
     });
 
-    // Cập nhật presence sau khi user mất kết nối
+    // Cập nhật presence sau khi socket mất kết nối
     socket.on('disconnect', (reason) => {
+      editingSessions.delete(socket.id);
+      editingRequests.delete(socket.id);
+
       console.log('Socket disconnected:', {
         socketId: socket.id,
         userId,
@@ -222,34 +432,43 @@ export function attachSocketIO(server: HttpServer) {
     },
 
     revokeAccess(projectId, userId) {
-      // Thu hồi quyền nhận realtime của project
+      // Dừng trạng thái chỉnh sửa của thành viên bị xóa
+      for (const peer of io.sockets.sockets.values()) {
+        if (peer.data.userId === userId) {
+          stopEditing(peer, projectId);
+        }
+      }
+
+      // Thu hồi quyền nhận event realtime
       io.in(userRoom(userId)).socketsLeave(projectRoom(projectId));
 
-      // Đóng các WebSocket Yjs của thành viên bị kick
+      // Đóng kết nối Yjs của thành viên bị xóa
       revokeYjsConnections(projectId, userId);
 
-      // Xóa trạng thái typing của thành viên bị kick
       io.to(projectRoom(projectId)).emit('chat:typing', {
         projectId,
         userId,
         typing: false,
       });
 
-      // Báo cho user bị kick biết đã mất quyền
+      // Thông báo cho thành viên bị xóa
       io.to(userRoom(userId)).emit('project:access_revoked', {
         projectId,
       });
 
-      // Cập nhật danh sách online
       void broadcastPresence(projectId).catch((error) => {
         console.error('Broadcast presence error:', error);
       });
     },
 
     closeProject(projectId) {
+      // Dừng trạng thái chỉnh sửa trong project bị đóng
+      for (const peer of io.sockets.sockets.values()) {
+        stopEditing(peer, projectId);
+      }
+
       io.in(projectRoom(projectId)).socketsLeave(projectRoom(projectId));
 
-      // Đóng toàn bộ kết nối Yjs của project
       revokeYjsConnections(projectId);
     },
   });

@@ -39,6 +39,7 @@ import { TaskDescriptionEditor } from './TaskDescriptionEditor';
 import { TaskFields } from './TaskFields';
 import { VersionConflict } from './VersionConflict';
 import styles from './TaskDetail.module.css';
+import { useTaskEditing } from '../../hooks/useTaskEditing';
 
 interface TaskDetailProps {
   projectId: string;
@@ -140,6 +141,7 @@ export function TaskDetail({
 
   // ---------- Sửa thẻ ----------
   const draft = useTaskDraft(task);
+  const editingUsers = useTaskEditing(projectId, taskId, draft.dirty);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | undefined>();
@@ -339,6 +341,12 @@ export function TaskDetail({
         {changedElsewhere && (
           <p className={styles.notice} role="status">
             Công việc vừa được cập nhật ở nơi khác. Khi lưu, bạn sẽ được chọn giữ bản nào.
+          </p>
+        )}
+
+        {editingUsers.length > 0 && (
+          <p className={styles.notice} role="status">
+            {Array.from(new Set(editingUsers)).join(', ')} đang chỉnh sửa công việc này...
           </p>
         )}
 
